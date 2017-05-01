@@ -21,7 +21,10 @@ option package;
 export
 mDegree,
 mBezout,
-mBezoutUnmixed;
+mBezoutUnmixed,
+bruteSearch,
+makeSystem,
+makeMatrix;
 
 local 
 detStats,
@@ -46,7 +49,6 @@ printBlocks,
 printCohs,
 printSpaces,
 makeSysMatrix,
-makeMatrix,
 Sylvmat,
 SylvmatIndex,
 multmap,
@@ -56,13 +58,11 @@ lstmonof,
 monbasis,
 Makepoly,
 MakeExtremepoly,
-Makesystem,
 homogenizePoly,
 is_determ,
 next_lex_rect,
 sort_dim,
 dBounds,
-allDetVecs,
 Jdiscr,
 BezoutianPoly,
 Bezoutmat;
@@ -75,6 +75,7 @@ uses LinearAlgebra, combinat;
 #########################################################################
 
 ### detStats
+#todo: update wrt bruteSearch
 detStats := proc(dl::list)
 local t, i, j, c, d, n := nops(dl);
 c := NULL;
@@ -439,13 +440,13 @@ end:
 
 ### Compute the Wayman Complex
 MakeComplex:=proc(nis::Vector, dis::Matrix, mis::Vector)
-	local i,summs, Kv, c,n, K;
+    local i,summs, Kv, c,n, K;
 
-	summs:=allsums(nis);
+    summs:=allsums(nis);
     n:=convert(nis,`+`);
 
-    if Dimension(mis)<>n then
-        ERROR(`Wrong dimensions in degree vectorsNot Determinantal`); fi;
+    if Dimension(mis)<>Dimension(nis) then
+        ERROR(`Wrong dimensions in degree vectors.`); fi;
     
 	K:= NULL;
 	for i in seq(-e, e=-n-1..n) do
@@ -555,7 +556,7 @@ makeSysMatrix:= proc(nis::Vector, dis::Matrix, mis::Vector,
     local n, sys, var;
     n:=convert(nis, `+`);
     var:= [seq( cat(x,i), i=1..Dimension(nis))];
-    sys:= Makesystem(nis,dis,letters,var);
+    sys:= makeSystem(nis,dis,letters,var);
     makeMatrix(nis,dis,mis,sys,var);
 end:
 
@@ -572,7 +573,7 @@ if varp = [] then
 fi:
 
 if sysp = [] then
-    sys:= Makesystem(nis,dis,[seq( cat(c,i-1), i=1..n+1)],var) ;
+    sys:= makeSystem(nis,dis,[seq( cat(c,i-1), i=1..n+1)],var) ;
 else
     sys:= sysp;
 fi;
@@ -720,8 +721,8 @@ local lm,r,c;
   lm;
 #op(sort([lm], proc (a, b) options operator,
 # arrow;Groebner:-TestOrder(a, b, grlex(op(var))) end proc));
-op(sort([lm], proc (a, b) options operator, arrow;Groebner:-TestOrder(a, b, tdeg(op(ListTools:-Reverse(var)))) end proc));
-#op(sort([lm], proc (a, b) options operator, arrow;Groebner:-TestOrder(a, b, plex(op(ListTools:-Reverse(var)))) end proc));
+#op(sort([lm], proc (a, b) options operator, arrow;Groebner:-TestOrder(a, b, tdeg(op(ListTools:-Reverse(var)))) end proc));
+op(sort([lm], proc (a, b) options operator, arrow;Groebner:-TestOrder(a, b, plex(op(ListTools:-Reverse(var)))) end proc));
 end:
 
 ### The natural monomial basis of S(mdeg)
@@ -794,7 +795,7 @@ MakeExtremepoly:= proc(nis::vector,dis::vector, c, var )
 end:
 
 ### Make multihomogeneous system
-Makesystem:= proc(nis::Vector, dis::Matrix, coef:=[seq(cat(c,i), i=0..convert(nis,`+`))], var:= [seq( cat(x,i), i=1..Dimension(nis))] )
+makeSystem:= proc(nis::Vector, dis::Matrix, coef:=[seq(cat(c,i), i=0..convert(nis,`+`))], var:= [seq( cat(x,i), i=1..Dimension(nis))] )
   local i,n,lst;
   n:=convert(nis,`+`);
   lst:=NULL;
@@ -887,8 +888,8 @@ local grps, low, upp, i;
 low,upp;    
 end:
 
-                
-allDetVecs := proc(nis::Vector,dis::Matrix)
+
+bruteSearch := proc(nis::Vector,dis::Matrix)
  local	cand,
 	tmp, misD, low,upp, grps,n,i, goodmis, summs, cnt,
 	msmall,small,mbig,big;
@@ -934,8 +935,16 @@ allDetVecs := proc(nis::Vector,dis::Matrix)
 # tmp :=product(%[i],i=1..grps);
 # if cnt-1 <> tmp then ERROR(`bad count`,cnt-1,tmp) fi;
 
- sort(convert(goodmis,list), sort_dim);
-end:	# allDetVecs
+  goodmis := sort(convert(goodmis,list), sort_dim);
+  low := NULL;
+  upp := NULL;
+  for cand in goodmis do
+    low := low, Vector(cand[1..grps]);
+    upp := upp, cand[-1];
+  od:
+print("Dimensions:", upp);
+low;
+end:	# bruteSearch
 
 
 #########################################################################

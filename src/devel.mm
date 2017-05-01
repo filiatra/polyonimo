@@ -17,5 +17,13 @@ devel := module()
 description "Polyonimo development package";
 option package;
 
+isWcomplex := proc(kk:=anything)
+
+return false;
+end:
+
+#TypeTools:-AddType(wcomplex, isWcomplex);
+
+
 
 end:#end polyonimo-devel
