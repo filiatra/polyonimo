@@ -23,54 +23,60 @@ mDegree,
 mBezout,
 mBezoutUnmixed,
 bruteSearch,
+#
+makePoly,
 makeSystem,
 makeExtremePoly,
+#
+findResMatrix,
+#
 makeComplex,
 printComplex,
 makeMatrix;
 
 local 
 #export
-blockStructure,
 NewCOMPLEX,
 NewCOMP,
 NewTERM,
 NewCOH,
+makeKv,
+makeKpq,
+#
+blockStructure,
 dimension,
 firstTerm,
 lastTerm,
-CohDim,
-detStats,
-minrankSystem,
-allsums,
-solveMatrixKernel,
+#
 critVect,
 macVect,
 unmixedSylvVect,
 biVarSylvVect,
 bilinearSylvVect,
+#
 Sdim,
 dimKv,
 dimKvp,
 computeCoHdim,
 complexDim,
 CoHzero,
-makeKv,
-makeKpq,
-printSpaces,
-makeSysMatrix,
-Sylvmat,
-SylvmatIndex,
+CohDim,
+#
 multmap,
 coeffof,
 allvars,
 lstmonof,
 monbasis,
-makePoly,
 homogenizePoly,
 is_determ,
 next_lex_rect,
 sort_dim,
+detStats,
+allsums,
+solveMatrixKernel,
+#
+Sylvmat,
+SylvmatIndex,
 #
 dBounds,
 Jdiscr,
@@ -608,8 +614,6 @@ if plevel=1 then
      od;
       print(K[ KK:-K[v]:-v ]= sum  ); # K[ KK:-K[v]:-nu ] = sum
   od;
-  d1, d2 := blockStructure(KK,1,0);
-  print( Matrix(nops(d1), nops(d2), (i,j)-> [d1[i],d2[j]]) );
   return;
 fi:
 
@@ -648,8 +652,14 @@ if plevel=3 then
     return;
 fi:
 
-# exterior alg.
 if plevel=4 then
+  d1, d2 := blockStructure(KK,1,0);
+  print( Matrix(nops(d1), nops(d2), (i,j)-> [d1[i],d2[j]]) );
+  return;
+fi:
+
+# exterior alg.
+if plevel=5 then
     for v from firstTerm(KK) to lastTerm(KK) by -1 do #  ( K_1, K_0, .. )
         sum:=1;
         for p to nops(KK:-K[v]:-S) do
@@ -662,7 +672,7 @@ if plevel=4 then
     od;
   return;
 fi:
-    ERROR(`Print level can only be 0..4`);
+    ERROR(`Print level can only be 0..5`);
 end:
 
 
@@ -670,16 +680,39 @@ end:
 # Matrix assembly
 #########################################################################
 
-makeSysMatrix:= proc(nis::Vector, dis::Matrix, mis::Vector,
-                     letters::list := [a,b,c,d,e,f,g,h])
-    local KK::WCOMPLEX, n, sys, var;
-    
-    KK:= makeComplex(nis, dis, mis):
+findResMatrix := proc(nis::Vector, dis::Matrix, ivar::list(symbol) :=[],
+                   mis::Vector := Vector(), 
+                   letters::list(symbol) := ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o'])
+    local vv, KK::WCOMPLEX, sys, var::list, mvec::Vector;
 
-    n:=convert(nis, `+`);
-    var:= [seq( cat(x,i), i=1..KK:-ng)];
+    if (Dimension(mis)=0) then
+        vv:= bruteSearch(nis,dis):
+        if nops(vv)=0 then
+            lprint(`No matrix found.`);
+            return Matrix();
+        else
+            mvec := vv[-1];
+            lprint(`Degree vector `, convert(mvec,list));
+        fi:
+    else
+        mvec := mis;
+    fi:
+
+    KK := makeComplex(nis, dis, mvec):
+    printComplex(KK,1);
+
+    if (ivar=[]) then
+        var:= ['x','y','z','u','v','w','s','t'][1..Dimension(nis)];
+    else
+        var := ivar;
+    fi:
+
     sys:= makeSystem(nis, dis, letters, var);
-    makeMatrix(KK, sys, var);
+    if _nresults = 1 or _nresults = undefined then
+        return makeMatrix(KK, sys, var);
+    else
+        return makeMatrix(KK, sys, var), sys;
+    fi:
 end:
 
 ### The Matrix K_1 -> K_0
@@ -689,7 +722,7 @@ makeMatrix:= proc(KK::WCOMPLEX, sysp:=[], varp:=[])
 n:= KK:-nv;
 
 if varp = [] then
-   var:= [seq( cat(x,i), i=1..KK:-ng)];
+   var:= ['x','y','z','u','v','w','s','t'][1..KK:-ng];
   else
     var:=varp;
 fi:
@@ -816,10 +849,10 @@ local i,j,row,col, vars, mat;
 end:
 
 ###return the coeff. of p in variables var of the monomial m:
-coeffof := proc(m,p,var)
+coeffof := proc(m, p, var)
 local lm, mlist, k;
   mlist := [coeffs(p,var,'lm')];
-  if member(m,{lm},'k') then mlist[k] else 0 fi;
+  if member(m,{lm},'k') then return mlist[k]; else return 0; fi;
 end:
 
 # todo
@@ -925,7 +958,9 @@ makeExtremePoly:= proc(nis::Vector,dis::Vector, c, var )
 end:
 
 ### Make multihomogeneous system
-makeSystem:= proc(nis::Vector, dis::Matrix, coef:=[seq(cat(c,i), i=0..convert(nis,`+`))], var:= [seq( cat(x,i), i=1..Dimension(nis))] )
+makeSystem:= proc(nis::Vector, dis::Matrix, 
+                  coef:=['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o'][1..1+convert(nis,`+`)], 
+                  var:= ['x','y','z','u','v','w','s','t'][1..Dimension(nis)] )
   local i,n,lst;
   n:=convert(nis,`+`);
   lst:=NULL;
@@ -1072,8 +1107,12 @@ bruteSearch := proc(nis::Vector,dis::Matrix)
     low := low, Vector(cand[1..grps]);
     upp := upp, cand[-1];
   od:
-print("Dimensions:", upp);
-low;
+
+    if _nresults = 1 or _nresults = undefined then
+        return [low];
+    else
+        return [low], [upp];
+    fi:
 end:	# bruteSearch
 
 
