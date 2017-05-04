@@ -24,9 +24,22 @@ mBezout,
 mBezoutUnmixed,
 bruteSearch,
 makeSystem,
+makeExtremePoly,
+makeComplex,
+printComplex,
 makeMatrix;
 
 local 
+#export
+blockStructure,
+NewCOMPLEX,
+NewCOMP,
+NewTERM,
+NewCOH,
+dimension,
+firstTerm,
+lastTerm,
+CohDim,
 detStats,
 minrankSystem,
 allsums,
@@ -42,11 +55,8 @@ dimKvp,
 computeCoHdim,
 complexDim,
 CoHzero,
-MakeComplex,
-MakeKv,
-MakeKvp,
-printBlocks,
-printCohs,
+makeKv,
+makeKpq,
 printSpaces,
 makeSysMatrix,
 Sylvmat,
@@ -56,12 +66,12 @@ coeffof,
 allvars,
 lstmonof,
 monbasis,
-Makepoly,
-MakeExtremepoly,
+makePoly,
 homogenizePoly,
 is_determ,
 next_lex_rect,
 sort_dim,
+#
 dBounds,
 Jdiscr,
 BezoutianPoly,
@@ -70,6 +80,77 @@ Bezoutmat;
 uses LinearAlgebra, combinat;
 
 #statementSequence
+
+#########################################################################
+# WCOMPLEX data structure
+#########################################################################
+
+# K_{*}
+NewCOMPLEX := proc(_grp::Vector, _deg::Matrix, _mvc::Vector, _K::list(WTERM):=[])
+
+    if Dimension(_mvc)<>Dimension(_grp) then
+        ERROR(`Wrong dimensions in degree vectors.`); fi;
+
+    return Record('nv'=convert(_grp,`+`), 'ng'=Dimension(_grp), 'grp'=_grp, 'deg'=_deg, 'mvc'=_mvc, 'K'=K);
+end:
+
+# K_{v}
+NewTERM := proc(_v::integer, _S:= [])
+return Record('v'=_v, 'S'=_S);
+end:
+
+# K_{p,q}, v=p-q
+NewCOMP := proc(_p::integer, _q::integer, _C::list(WCOMP) := [])
+return Record('p'=_p, 'q'=_q, 'C'=_C);
+end:
+
+# H^q(mdeg)
+NewCOH := proc(_exp::set, _fis::set, grp::Vector, _mdeg::Vector)
+local i, prod := 1;
+    for i to Dimension(_mdeg) do
+        if _mdeg[i]<0 then
+            prod:= prod* numbcomb(-_mdeg[i]-1     , grp[i] );
+        else
+            prod:= prod* numbcomb( _mdeg[i]+grp[i], grp[i] );
+        fi;
+    od;
+return Record('exp'=_exp, 'fis'=_fis, 'mdeg'=_mdeg, 'dim'=prod);
+end:
+
+# First nonzero term in the complex (index bigger than last term)
+firstTerm := proc(KK::WCOMPLEX)
+op(op(KK:-K)[1])[2];
+end:
+
+# Last nonzero term in the complex (index lower than first term)
+lastTerm := proc(KK::WCOMPLEX)
+op(op(KK:-K)[1])[1];
+end:
+
+# Dimension of complex terms
+dimension := overload(
+    [
+        proc(a::WTERM) option overload;
+        local v, res := 0;
+            for v in a:-S do
+                res := res + dimension(v);
+            od:
+            return res;
+        end,
+
+        proc(b::WCOMP) option overload;
+        local v, res := 0;
+            for v in b:-C do
+                res := res + v:-dim;
+            od:
+            return res;
+        end,
+
+        proc(c::WCOH) option overload;
+            return c:-dim;
+        end
+    ]
+):
 
 #########################################################################
 #########################################################################
@@ -93,25 +174,6 @@ for i to n do
    c := c, [t,d];
 od:
 [c];
-end:
-
-### Minrank
-minrankSystem := proc(N::integer, r::integer)
-local l, deg, i, g;
-    l:= Vector([(N-r)^2, seq(r,i=1..N-r)]):
-    deg:= Matrix(N-r+1, 1 + (N-r)*N):
-    
-    for i to N-r+1 do
-        deg[i, 1+(N-r)*N] := 1;
-    od:
-
-    for g from 1 to N-r do
-        for i from 1 to N do
-            deg[1  , (g-1)*N + i ] := 1;
-            deg[g+1, (g-1)*N + i ] := 1;
-        od:        
-    od:
-    l, deg;
 end:
     
 ### all q-sums by dynamic programming
@@ -149,7 +211,7 @@ end:
 
 # Plain Sylv: solveMatrixKernel(M,v[2]);
 #
-# Note: values to reciprocals should be consider false
+# Note: values to reciprocals should be considered false
 #
 solveMatrixKernel := proc(M::Matrix, cols::list, dual:= false)
 local V, c, ct, ksz, i, j, vals, psol, sols, l, dn, ind, vv, nvv, cnt, k;
@@ -272,6 +334,9 @@ fi:
 mis;
 end:
 
+# Mixed bilinear system
+# ...
+
 #########################################################################
 # Dimensions
 #########################################################################
@@ -284,10 +349,7 @@ mBezout:= proc(nis::Vector, dis::Matrix, j::integer := -1)
 	grps := Dimension(nis);
     if [grps,n+1] <> [Dimension(dis)] then ERROR(`BAD DIMS ! `) fi;
     
-    fct:= 1;
-    for k to grps do
-        fct := fct * factorial(nis[k]);
-    od:
+    fct := mul(factorial(nis[k]), k=1..grps);
 
     if grps=n then dd:=dis; else
     # Expand the degree matrix    
@@ -295,9 +357,9 @@ mBezout:= proc(nis::Vector, dis::Matrix, j::integer := -1)
     fi:
 
     if j=-1 then# Total degree of resultant
-        RETURN( convert([seq( Permanent(DeleteColumn(dd,i)),i=1..n+1)],`+`) /fct);
+        RETURN( add( Permanent(DeleteColumn(dd,i)),i=1..n+1) / fct);
     else# Number of solutions of square system (ie. without f_j)
-        RETURN( Permanent(DeleteColumn(dd,j)) /fct );
+        RETURN( Permanent(DeleteColumn(dd,j)) / fct );
     fi:
 end:
 
@@ -359,6 +421,28 @@ dimKvp:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer,p::integer)
 	RETURN(dim);
 end:# dimKvp
 
+
+### Dimension of Kv,p
+CohDim:= proc(KKvp, nis::Vector, dis::Matrix, mis::Vector)
+  local i, h, dim, prod, _u, n;
+
+  n:=convert(nis, `+`);
+
+  dim:= 0;
+  for h from 2 to nops(KKvp) do
+	_u:= mis-convert([Vector(n),seq(dis[..,i],i=KKvp[h][2])],`+` );
+	prod:=1; #compute dim H^q
+	for i from 1 to Dimension(nis) do
+	   if _u[i]<0 then
+		prod:= prod* numbcomb( -_u[i]-1    ,nis[i] );
+	   else prod:= prod* numbcomb( _u[i]+nis[i],nis[i] );
+	   fi;
+	od;
+	dim:= dim + prod ;
+  od;
+  dim;
+end:
+
 computeCoHdim := proc(nis::Vector,q::integer,mpd::Vector )
  local r, i, nonz, goodsum, dimH,dimHs, zerotest, summs;
 
@@ -366,25 +450,26 @@ computeCoHdim := proc(nis::Vector,q::integer,mpd::Vector )
     r:=Dimension(nis):
     dimH:=0;
     for nonz in summs[q] do  # sum_summs
-  goodsum:=false;dimHs:=1;
+        goodsum:=false;
+        dimHs:=1;
         i:=0;
-  while dimHs>0 and i<r do
-    i:=i+1;  # prod
-    if member(i,nonz) then # H^ni (mpd_i)
-      if mpd[i] >= -nis[i] then #print(i,nonz,mpd[i],nis[i]);
-        goodsum:=true; dimHs:=0;
-        else dimHs := dimHs * numbcomb(-mpd[i]-1,nis[i]); fi;
-    else if mpd[i] < 0 then #print(i,mpd[i]);
-        goodsum:=true; dimHs := 0;
-        else dimHs := dimHs * numbcomb(mpd[i]+nis[i],nis[i]); fi;
-    fi;
-  od:#while (i)
-  if not goodsum then
-     if dimHs=0 then ERROR(`BAD computation`) fi;
-  fi;
-  dimH := dimH + dimHs;
- od:
- eval(dimH);
+        while dimHs>0 and i<r do
+            i:=i+1;  # prod
+            if member(i,nonz) then # H^ni (mpd_i)
+                if mpd[i] >= -nis[i] then #print(i,nonz,mpd[i],nis[i]);
+                    goodsum:=true; dimHs:=0;
+                else dimHs := dimHs * numbcomb(-mpd[i]-1,nis[i]); fi;
+            else if mpd[i] < 0 then #print(i,mpd[i]);
+                     goodsum:=true; dimHs := 0;
+                 else dimHs := dimHs * numbcomb(mpd[i]+nis[i],nis[i]); fi;
+            fi;
+        od:#while (i)
+        if not goodsum then
+            if dimHs=0 then ERROR(`BAD computation`) fi;
+        fi;
+        dimH := dimH + dimHs;
+    od:
+    eval(dimH);
 end:    # coHdim
 
 # Input: A Complex
@@ -420,11 +505,9 @@ local Kv, h, u, prod, i, r, d1, dd, n, grps;
 end:
 
 ### true iff H^q(mpd)=0
-CoHzero := proc(grp::set, q::integer, nis::Vector, mpd::Vector)
-  local r, i,n, nonz, goodsum;
-  n:=convert(nis,`+`);
-  r:= Dimension(nis);
-    for i from 1 to r do
+CoHzero := proc(grp::set, nis::Vector, mpd::Vector)
+  local i;
+    for i to Dimension(nis) do
         if member(i,grp) then
             if mpd[i] >= -nis[i] then RETURN(true); fi;
         else
@@ -439,111 +522,147 @@ end:
 #########################################################################
 
 ### Compute the Wayman Complex
-MakeComplex:=proc(nis::Vector, dis::Matrix, mis::Vector)
-    local i,summs, Kv, c,n, K;
+makeComplex := proc(nis::Vector, dis::Matrix, mis::Vector)
+    local kfirst, klast:= NULL, i,summs, Kv, KK, tmp := NULL;
 
     summs:=allsums(nis);
-    n:=convert(nis,`+`);
+    KK:= NewCOMPLEX(nis,dis,mis);
 
-    if Dimension(mis)<>Dimension(nis) then
-        ERROR(`Wrong dimensions in degree vectors.`); fi;
-    
-	K:= NULL;
-	for i in seq(-e, e=-n-1..n) do
-		Kv := MakeKv(nis,dis,mis,i,summs);
-		if not Kv=[] then
-			K:= K, Kv;
+	#for i in seq(-e, e=-n-1..n) do
+	for i from -KK:-nv to KK:-nv + 1 do
+		Kv := makeKv(nis,dis,mis,i,summs);
+		if not Kv:-S = [] then
+			tmp := tmp, Kv;
+            if ( klast=NULL ) then
+                klast:= i;
+            else
+                kfirst := i;
+            fi:
 		fi;
     od;
-    # 1     2      3      5 ---Complex---
-    [[K], (nis), (dis), (mis)];
+    KK:-K := Array(klast..kfirst,[tmp], datatype=WTERM);
+    return KK;
 end:
 
 ### Make term Kv###
-MakeKv:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer, summs::array)
-	local b, Kv, n, p, Kvp;
+makeKv:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer, summs::array)
+	local b, Kv, n, p, Kvp, tmp := NULL;
     n:=convert(nis,`+`);
-	Kv:=nu;	for p in seq(0..n+1) do
-		Kvp := MakeKvp(nis,dis,mis,nu,p, summs );
-		if not Kvp=[] then
-			Kv:= Kv, Kvp;
-		fi;	od;
-	if Kv=nu then RETURN([]); else RETURN([Kv]); fi;end:
+
+    Kv:= NewTERM(nu);
+    for p in seq(0..n+1) do
+        Kvp := makeKpq(nis,dis,mis,nu,p, summs );
+        if not Kvp:-C = [] then
+            tmp := tmp, Kvp;
+		fi;	
+od;
+    Kv:-S := [tmp];
+    return Kv;
+end:
 
 ###### Make term Kv,p
-MakeKvp:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer, p::integer, summs::array)
-	local c,Kvp,n,q,s, grps;
+makeKpq:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer, p::integer, summs::array)
+	local c,Kvp,n,q,s, grps, mdeg, tmp := NULL;
 	n:=convert(nis, `+`);
 	grps := Dimension(nis);
     q:=p-nu;
-	if q<0 or q>n then RETURN([]); fi;
-    Kvp:= p ;
-    for c in choose([seq(1..n+1)],p) do # improve ?
+    Kvp:= NewCOMP(p,q);
+	if q<0 or q>n then 
+     return Kvp;
+    fi;
+
+    for c in choose({seq(1..n+1)},p) do # improve ?
         for s in summs[q] do
-            if not CoHzero(s,q, nis, mis-convert([Vector(grps),seq(Column(dis,i),i=c)],`+`) ) then
-                Kvp:=Kvp, [ s , c];
+            mdeg := mis-convert([Vector(grps),seq(Column(dis,i),i=c)],`+`):
+            if not CoHzero(s, nis, mdeg ) then
+                tmp := tmp, NewCOH(s, c, nis, mdeg); #
                 break;
-            fi;od;od;
-    if Kvp=p then RETURN([]); else RETURN([Kvp]); fi;
+            fi;
+od;
+od;
+     Kvp:-C := [tmp];
+     return Kvp;
 end:
 
-### Print Kv,p 's
-printBlocks:= proc( KK )
-  local v, p, sum;
 
-  for v to nops(KK[1]) do
+### Print the complex
+printComplex:= proc( KK::WCOMPLEX, plevel::integer := 1)
+  local h, u, k, d1, d2, v, p, sum;
+
+  unassign('K');
+
+if plevel=0 then
+  sum:= 0, "--->";
+    for v from firstTerm(KK) to lastTerm(KK) by -1 do #  ( K_1, K_0, .. )
+        sum:= sum, K[ KK:-K[v]:-v ], "--->";
+    od;
+    print( sum, 0 );
+    return;
+fi:
+
+if plevel=1 then
+  for v from firstTerm(KK) to lastTerm(KK) by -1 do #  ( K_1, K_0, .. )
      sum:=0;
-     for p from 2 to nops(KK[1][v]) do
-	sum:= sum+  K[ KK[1][v][1] , KK[1][v][p][1] ] ;
+     for p to nops(KK:-K[v]:-S) do # ( K_{1,1} , K_{1,2} , .. )
+         sum:= sum +  K[ KK:-K[v]:-v, KK:-K[v]:-S[p]:-p ] ;
      od;
-  print(K[ KK[1][v][1] ]= sum  );
+      print(K[ KK:-K[v]:-v ]= sum  ); # K[ KK:-K[v]:-nu ] = sum
   od;
-end:
+  d1, d2 := blockStructure(KK,1,0);
+  print( Matrix(nops(d1), nops(d2), (i,j)-> [d1[i],d2[j]]) );
+  return;
+fi:
 
-### Prints the complex as H^q 's
-printCohs:= proc( KK )
-local u, r, q, v, p, h, sum, grps;
-    r:= Dimension(KK[2]);
-    grps := Dimension(KK[2]);
-    
-  for v to nops(KK[1]) do
-      sum:=1;
-     for p from 2 to nops(KK[1][v]) do
-	 q:= KK[1][v][p][1] - KK[1][v][1];
-	 for h from 2 to nops(KK[1][v][p]) do
-         u:= KK[4]-
-         convert([Vector(grps),seq(Column(KK[3],i),i=KK[1][v][p][h][2])],`+`);
-         sum:= sum* H[q]( seq(u[i], i=1..r) );
-     od;
-     od;
-  print( K[KK[1][v][1]]= sum );
-  od;
-end:
+if plevel=2 then
+    for v from firstTerm(KK) to lastTerm(KK) by -1 do #  ( K_1, K_0, .. )
+        sum:=1;
+        for p to nops(KK:-K[v]:-S) do
+            for h to nops(KK:-K[v]:-S[p]:-C) do
+                u:= KK:-K[v]:-S[p]:-C[h]:-mdeg;
+                sum:= sum* H[ KK:-K[v]:-S[p]:-q ]( seq(u[i], i=1..KK:-ng) )
+            od;
+        od;
+    print( K[ KK:-K[v]:-v ] = sum );
+    od;
+  return;
+fi:
 
-### Prints the complex terms identified as polynomial spaces
-printSpaces:= proc( KK )
-local k, u, r, q, v, p, h, sum, grps;
-    r:= Dimension(KK[2]);
-    grps := Dimension(KK[2]);
+if plevel=3 then
     unassign('S');
-    for v to nops(KK[1]) do
-      sum:=1;
-     for p from 2 to nops(KK[1][v]) do
-	 q:= KK[1][v][p][1] - KK[1][v][1];
-	 for h from 2 to nops(KK[1][v][p]) do
-         u:= KK[4]-
-         convert([Vector(grps),seq(Column(KK[3],i),i=KK[1][v][p][h][2])],`+`);
-         for k to grps do
-             if u[k]<0 then
-                 u[k]:=u[k]+KK[2][k]+1;
-             fi;
-             # note: degree 0 is not distingushed for primal/dual
-             sum:= sum*S( seq(u[i], i=1..r) );
-         od;
-     od;
-     od;
-  print( K[KK[1][v][1]]= sum );
-  od;
+    for v from firstTerm(KK) to lastTerm(KK) by -1 do #  ( K_1, K_0, .. )
+        sum:=1;
+        for p to nops(KK:-K[v]:-S) do
+            for h to nops(KK:-K[v]:-S[p]:-C) do
+                u:= KK:-K[v]:-S[p]:-C[h]:-mdeg;
+                for k to KK:-ng do
+                    if u[k]<0 then
+                        u[k]:=u[k]+KK:-grp[k]+1;
+                    fi;
+                    # note: degree 0 is not distingushed for primal/dual
+                    sum:= sum*S( seq(u[i], i=1..KK:-ng) );
+                od;
+            od;
+        od;
+        print( K[ KK:-K[v]:-v ]= sum );
+    od;
+    return;
+fi:
+
+# exterior alg.
+if plevel=4 then
+    for v from firstTerm(KK) to lastTerm(KK) by -1 do #  ( K_1, K_0, .. )
+        sum:=1;
+        for p to nops(KK:-K[v]:-S) do
+            for h to nops(KK:-K[v]:-S[p]:-C) do
+                u:= KK:-K[v]:-S[p]:-C[h]:-mdeg;
+                sum:= sum* (Lambda^(KK:-K[v]:-S[p]:-C[h]:-fis))[op(KK:-K[v]:-S[p]:-C[h]:-exp)];
+            od;
+        od;
+        print( K[ v ] = sum );
+    od;
+  return;
+fi:
+    ERROR(`Print level can only be 0..4`);
 end:
 
 
@@ -553,90 +672,98 @@ end:
 
 makeSysMatrix:= proc(nis::Vector, dis::Matrix, mis::Vector,
                      letters::list := [a,b,c,d,e,f,g,h])
-    local n, sys, var;
+    local KK::WCOMPLEX, n, sys, var;
+    
+    KK:= makeComplex(nis, dis, mis):
+
     n:=convert(nis, `+`);
-    var:= [seq( cat(x,i), i=1..Dimension(nis))];
-    sys:= makeSystem(nis,dis,letters,var);
-    makeMatrix(nis,dis,mis,sys,var);
+    var:= [seq( cat(x,i), i=1..KK:-ng)];
+    sys:= makeSystem(nis, dis, letters, var);
+    makeMatrix(KK, sys, var);
 end:
 
 ### The Matrix K_1 -> K_0
-makeMatrix:= proc(nis::Vector, dis::Matrix, mis::Vector, sysp:=[], varp:=[] )
-  local sys, var, n, KK, matr, row, col, rows, cols, d1, d2;
+makeMatrix:= proc(KK::WCOMPLEX, sysp:=[], varp:=[])
+  local ddeg, sys, var, n, matr, row, col, rows, cols, d1, d2;
 
-n:=convert(nis, `+`);
+n:= KK:-nv;
 
 if varp = [] then
-   var:= [seq( cat(x,i), i=1..Dimension(nis))];
+   var:= [seq( cat(x,i), i=1..KK:-ng)];
   else
     var:=varp;
 fi:
 
 if sysp = [] then
-    sys:= makeSystem(nis,dis,[seq( cat(c,i-1), i=1..n+1)],var) ;
+    unassign('c');
+    sys:= makeSystem(KK:-grp, KK:-deg, [seq( cat(c,i-1), i=1..KK:-nv+1)],var) ;
 else
     sys:= sysp;
 fi;
 
-  #compute the complex
-  KK:=MakeComplex(nis,dis,mis);
-
   #for now demand det/al complex
-  if not nops(KK[1])=2 then ERROR(`Not Determinantal`) fi;
+  if not ArrayNumElems(KK:-K)=2 then ERROR(`Not Determinantal`) fi;
 
-  #compute block dimensions
-  d1:=0;
-  for row from 2 to nops(KK[1][1]) do
-	d1:= d1, CohDim(KK[1][1][row], nis, dis, mis);
-  od; d1:= [d1];
-  d2:=0;
-  for col from 2 to nops(KK[1][2]) do
-	d2:= d2, CohDim(KK[1][2][col], nis, dis, mis);
-  od; d2:= [d2];
+    #compute block dimensions
+    d1, d2 := blockStructure(KK,1,0);
+    #print(d1, d2);
 
-  rows:= NULL;
-  for row from 2 to nops(KK[1][1]) do
-     cols:= NULL;
-     for col from 2 to nops(KK[1][2]) do
-	    if KK[1][1][row][1]-1 < KK[1][2][col][1] then matr:= matrix( d1[row] , d2[col] , 0 ); #Zero map
-       else if KK[1][1][row][1]-1 = KK[1][2][col][1] then
-             matr:=   Sylvmat(KK[1][1][row],KK[1][2][col], sys, nis, dis, mis, var) ;
-       else  matr:= Bezoutmat(KK[1][1][row],KK[1][2][col], sys, nis, dis, mis, var) ;
+    rows:= NULL;
+    for row to nops(KK:-K[1]:-S) do 
+        cols:= NULL;
+        for col to nops(KK:-K[0]:-S) do
+            ddeg := KK:-K[1]:-S[row]:-q - KK:-K[0]:-S[col]:-q + 1;
+            if ddeg=0 then 
+            matr:= Matrix( d1[row] , d2[col] , 0, storage=sparse ); #Zero map
+       else if ddeg=1 then
+                matr:= Sylvmat(KK, 1,row, 0,col, sys, var);
+                #print("Sylv", row, col,"-->", Dimension(matr));
+       else  
+                matr:= Bezoutmat(KK, 1,row, 0,col, sys, var);
+                #print("Bez", row, col,"-->", Dimension(matr));
        fi;fi;
-       cols:= cols, convert(matr,Matrix);
+
+       cols:= cols, matr;
      od;
      rows:= rows, [cols];
   od;
   Matrix([rows], storage=sparse);
 end:
 
+
 ### Sylvester Matrix block K_{1,p}->K_{0,p-1}
-Sylvmat:= proc(KK1 ,  KK0, f, nis::Vector, dis::Matrix, mis::Vector , var)
-local p,n,i, r,c, u ,v, mat, cols,rows, grps, k;
-    
-    n:=convert(nis,`+`);
-    grps := Dimension(nis);
-    p:= KK1[1];
-    
+# KK, v1, p1, v0, p0 . --> How to get:  term(KK,v1,p1) ?
+Sylvmat:= proc(KK::WCOMPLEX, 
+n1::integer, t1::integer, 
+n0::integer, t0::integer, f, var)
+local p::integer, i::integer, r::WCOH, c::WCOH, _u::Vector , _v::Vector, mat::Matrix, cols, rows, grps::integer, k::integer;
+
+if ( n1-n0 <> 1) then ERROR(`Terms not consecutive`) fi;
+
+#    n:= KK:-nv;
+    grps := KK:-ng;
+    p:= KK:-K[n1]:-S[t1]:-p;
+    if (p - KK:-K[n0]:-S[t0]:-p <> 1) then ERROR(`Terms not consistent`) fi;
+
     rows:=NULL;
-  for r from 2 to nops(KK1) do
+    for r in KK:-K[n1]:-S[t1]:-C do
      cols:=NULL;
-     u:= (mis-convert([Vector(grps),seq(Column(dis,i),i=KK1[r][2])],`+` ));
-     for k to grps do if u[k]<0 then u[k]:=u[k]+nis[k]+1; fi;od;
-     for c from 2 to nops(KK0) do
-        v:= ( mis- convert([Vector(grps),seq(Column(dis,i),i=KK0[c][2])],`+`) );
-        for k to grps do if v[k]<0 then v[k]:=v[k]+nis[k]+1; fi;od;#Dual!
-        if convert(KK0[c][2],set) subset convert(KK1[r][2],set) then
-            i:=1; while i<p and KK1[r][2][i]=KK0[c][2][i] do i:=i+1; od; k:=KK1[r][2][i];
-            mat:= ( ((-1)^(i+1))*multmap(f[k], u, v, nis, var ) );
+     _u:= copy(r:-mdeg);
+     for k to grps do if _u[k]<0 then _u[k]:=_u[k]+KK:-grp[k]+1; fi;od;
+     for c in KK:-K[n0]:-S[t0]:-C do
+        _v:= copy(c:-mdeg);
+        for k to grps do if _v[k]<0 then _v[k]:=_v[k]+KK:-grp[k]+1; fi;od;#Dual!
+        if c:-fis subset r:-fis then
+            i:=1; while i<p and r:-fis[i]=c:-fis[i] do i:=i+1; od; k:=r:-fis[i];
+            mat:= ( ((-1)^(i+1))*multmap(f[k], _u, _v, KK:-grp, var ) );
         else
-            mat:= matrix( Sdim(nis,u), Sdim(nis,v), 0);
+            mat:= Matrix(r:-dim, c:-dim, 0, storage=sparse);
         fi;
-         cols:= cols, convert(mat, Matrix);
+         cols:= cols, mat;
      od;
       rows:= rows,[cols];
   od;
-    Matrix([rows]);
+    Matrix([rows], storage=sparse);
 end:
 
 ### Sylvester Matrix block indexing K_{1,p}->K_{0,p-1}
@@ -644,7 +771,7 @@ SylvmatIndex:= proc(nis::Vector, dis::Matrix, mis::Vector , varp:=[])
   local KK, KK0, KK1, grps, i, var, u,  cols, rows, row, r, c, k;
     
     #compute the complex
-    KK:=MakeComplex(nis,dis,mis);
+    KK:=makeComplex(nis,dis,mis);
     
     grps := Dimension(nis);
     
@@ -685,16 +812,19 @@ local i,j,row,col, vars, mat;
             mat := mat, coeffof(expand(col[j]/row[i]), f , vars ) ;
         od;
     od;
-    Matrix(nops(row),nops(col),[mat]);
+    Matrix(nops(row),nops(col),[mat]); #,storage=sparse
 end:
 
 ###return the coeff. of p in variables var of the monomial m:
 coeffof := proc(m,p,var)
-local lm,lc,k;
-  lc := [coeffs(p,var,'lm')];
-  lm := [lm];
-  if member(m,lm,'k') then lc[k] else 0 fi;
+local lm, mlist, k;
+  mlist := [coeffs(p,var,'lm')];
+  if member(m,{lm},'k') then mlist[k] else 0 fi;
 end:
+
+# todo
+# coeffof := proc(m,mlist)
+
 
 #all variables, var the vector of group names, for example bihomo: [x,y]
 allvars:= proc(nis::Vector,var)
@@ -757,7 +887,7 @@ end:
 #########################################################################
 
 ### Make polynomial with m-degree di
-Makepoly:= proc(nis::Vector,di::Vector, c, var )
+makePoly:= proc(nis::Vector,di::Vector, c, var )
   local vars, p, i, s;
 
     vars:=allvars(nis,var);
@@ -767,29 +897,29 @@ Makepoly:= proc(nis::Vector,di::Vector, c, var )
     unassign('c');
     for i from 1 to nops(s) do
 #        p:= p + c[i-1] * s[i];
- TP:
+# TP-indexing:
      p:= p + c[degree(s[i],vars[1]),degree(s[i],vars[2])] * s[i];
     od;
     p;
 end:
 
 ### Make extreme polynomial with degree dis
-MakeExtremepoly:= proc(nis::vector,dis::vector, c, var )
-  local v, p, i,j,dd, vars;
+makeExtremePoly:= proc(nis::Vector,dis::Vector, c, var )
+  local v, p, i,j, vars;
 
   vars:= allvars(nis,var);
-  dd:= evalm(dis);
   p:=1;v:=1;
-  for i to vectdim(nis) do
+  for i to Dimension(nis) do
      for j to nis[i] do
-       p:= p*(1+ vars[v]^dd[i] );
+       p:= p*(1+ vars[v]^nis[i] );
        v:= v+1;
   od;od;
 
   v:= [lstmonof(evalm(p),vars)];
   p:=0;
   for i from 1 to nops(v) do
-     p:= p+ c[i-1]*v[i];
+     #p:= p+ c[i-1]*v[i];
+     p:= p + c[degree(v[i],vars[1]),degree(v[i],vars[2])] * v[i];
   od;
   p;
 end:
@@ -800,7 +930,7 @@ makeSystem:= proc(nis::Vector, dis::Matrix, coef:=[seq(cat(c,i), i=0..convert(ni
   n:=convert(nis,`+`);
   lst:=NULL;
   for i from 1 to n+1 do
-      lst:= lst, Makepoly(nis, Column(dis,i), coef[i] ,var);
+      lst:= lst, makePoly(nis, Column(dis,i), coef[i] ,var);
   od;
   [lst];
 
@@ -836,7 +966,7 @@ is_determ := proc(nis::Vector,dis::Matrix,mis::Vector, summs::array)
             for c in choose([seq(1..n+1)],p) do
                 q := p-Nu:
                 for s in summs[q] do
-                    if not CoHzero(s,q,nis,mis-convert([Vector(grps),seq(dis[..,i],i=c)],`+`))
+                    if not CoHzero(s,nis,mis-convert([Vector(grps),seq(dis[..,i],i=c)],`+`))
                     then RETURN(false) fi:
                 od:
             od:
@@ -951,42 +1081,75 @@ end:	# bruteSearch
 # Bezout Matrix assembly
 #########################################################################
 
+blockStructure:= proc(KK::WCOMPLEX, n1::integer, n0::integer)
+    local d1, d2, row, col;
+    if ( n1-n0 <> 1) then ERROR(`Terms not consecutive`) fi;
+    
+    #compute block dimensions
+    d1:=NULL;
+    for row in KK:-K[n1]:-S do 
+        d1:= d1, dimension(row);
+    od; 
+
+    d2:=NULL;
+    for col in KK:-K[n0]:-S do
+        d2:= d2, dimension(col);
+    od;
+
+#Matrix(nops(d1), nops(d2), (i,j)-> [d1[i],d2[j]] );
+[d1], [d2];
+end:#blockStructure
+
 
 # Determinant of the discrete Jacobian
 Jdiscr := proc(lp::list, vx)
-local N,i,j,k,vxi,mtr,s;
+local N,i,j,k,vxi,s, mtr, mtr2;
 
   N := nops(lp);
   if nops(vx) <> N-1 then print(nops(lp), vx );
-    ERROR(`the number of polynomials must be the number of variables +1 `);
+    ERROR(`The number of polynomials must be the number of variables +1 `);
   fi;
   mtr := array(1..N,1..N);
   for i from 1 to N do mtr[i,1] := lp[i] od;
 
   for j from 2 to N do
+#print( cat(_,vx[j-1]) );
      for i from 1 to N do
        mtr[i,j]:= subs(vx[j-1]= cat(_,vx[j-1]) ,mtr[i,j-1]); ## vy[j-1]
      od;
   od;
 
-  for j from N to 2 by -1 do
+#print(mtr);
+
+mtr2 := array(1..N,1..N);
+for i from 1 to N do mtr2[i,1] := lp[i] od;
+
+  for j from 2 to N do
+#print( cat(_,vx[j-1]) );
      for i from 1 to N do
-       mtr[i,j] := quo(mtr[i,j]-mtr[i,j-1], cat(_,vx[j-1]) - vx[j-1], cat(_,vx[j-1]));
+       #mtr2[i,j] := quo(mtr[i,j]-mtr[i,j-1], cat(_,vx[j-1]) - vx[j-1], cat(_,vx[j-1]));
+#       mtr2[i,j] := expand( simplify((mtr[i,j]-mtr[i,j-1])/(cat(_,vx[j-1]) - vx[j-1])) );
+       mtr2[i,j] := (((mtr[i,j]-mtr[i,j-1])/(cat(_,vx[j-1]) - vx[j-1])) );
      od;
   od;
 
-  det(convert(mtr,matrix));
+#print(mtr2);
+mtr2 := expand(simplify(mtr2) );
+#print(mtr2);
+
+  Determinant(convert(mtr2,Matrix));
 end:
 
 ### Bezoutian block of S(sp1)->S(sp2)
-BezoutianPoly:= proc(f,sp1::vector,sp2::vector,nis::vector,var, grp:={} )
+BezoutianPoly:= proc(f,sp1::Vector,sp2::Vector,nis::Vector,var, grp:={} )
   local i,j,row,col, nvar, nvars, ovar, ovars, Bpol, mat;
 
   if grp={} then grp:={seq(1..nops(var))} fi;
 
   nvar:=NULL; ovar:=NULL;
   for i to nops(var) do
-         if member(i,grp ) then
+#  for i from nops(var) to 1 by -1 do
+         if member(i,grp) then
 	    nvar:= nvar,cat(_,var[i]);
 	    ovar:= ovar, var[i];
 	 else
@@ -999,53 +1162,27 @@ BezoutianPoly:= proc(f,sp1::vector,sp2::vector,nis::vector,var, grp:={} )
   nvars := allvars(nis,nvar);
   ovars := allvars(nis,ovar);
 
+  #print("ovars:", nvars);
+
   Bpol:= Jdiscr(f,ovars ); # introduces the new variables inside
-  row:= [monbasis(nis,sp1, var)];
-  col:= [monbasis(nis,sp2,nvar)];
+
+  #print( collect(Bpol, [op(ovars),op(nvars)], distributed) );
+
+  row:= [monbasis(nis,sp1, ovar)];
+  col:= [monbasis(nis,sp2, nvar)];
+
+#  print(Sdim(nis,sp1),Sdim(nis,sp2));
+#  print(nops(row), nops(col));
+#  print(sp1, row," ** ", sp2, col);
 
   nvars:= [op(allvars(nis,var)),op(nvars)];
   mat:= NULL;
   for i to nops(row) do
     for j to nops(col) do
-     mat := mat, coeffof(col[j]*row[i], Bpol , nvars );
+     mat := mat, coeffof(expand(col[j]*row[i]), Bpol , nvars );
     od;
   od;
-  matrix(nops(row),nops(col),[mat]);
-end:
-
-### Bezoutian block of S(sp1)->S(sp2)
-BezoutianPoly:= proc(f,sp1::vector,sp2::vector,nis::vector,var, grp:={} )
-  local i,j,row,col, nvar, nvars, ovar, ovars, Bpol, mat;
-
-  if grp={} then grp:={seq(1..nops(var))} fi;
-
-  nvar:=NULL; ovar:=NULL;
-  for i to nops(var) do
-         if member(i,grp ) then
-	    nvar:= nvar,cat(_,var[i]);
-	    ovar:= ovar, var[i];
-	 else
-	    nvar:= nvar, 0;
-	    ovar:= ovar, 0;
-	 fi;
-  od;
-  nvar:= [nvar]; ovar:= [ovar];
-
-  nvars := allvars(nis,nvar);
-  ovars := allvars(nis,ovar);
-
-  Bpol:= Jdiscr(f,ovars );
-  row:= [monbasis(nis,sp1, var)];
-  col:= [monbasis(nis,sp2,nvar)];
-
-  nvars:= [op(allvars(nis,var)),op(nvars)];
-  mat:= NULL;
-  for i to nops(row) do
-    for j to nops(col) do
-     mat := mat, coeffof(col[j]*row[i], Bpol , nvars );
-    od;
-  od;
-  matrix(nops(row),nops(col),[mat]);
+  Matrix(nops(row),nops(col),[mat]);
 end:
 
 ### Bezoutian block K_{1,a}->K_{0,b}
@@ -1053,29 +1190,33 @@ end:
 # see the map:
 # http://www.orcca.on.ca/TechReports/TechReports/2007/TR-07-02.pdf,
 # page 2
-Bezoutmat:= proc(KK1 ,  KK0, f, nis::vector, dis::vector, sis::vector, mis::vector , var)
-  local p, pols, subsvar, n,grps, r,c, rows, cols, u,v, k, mat;
+Bezoutmat:= proc(KK::WCOMPLEX,
+n1::integer, t1::integer, 
+n0::integer, t0::integer, f, var)
 
-  n:=convert(convert(nis,list),`+`);
-  grps := vectdim(nis);
-  p:= KK0[1];
+  local p, pols, subsvar, n,grps, r,c, rows, cols, _u, _v, k, mat;
+
+  n:= KK:-nv;
+  grps := KK:-ng;
+  p:= KK:-K[n1]:-S[t1]:-p;
+  if (p - KK:-K[n0]:-S[t0]:-p <> n+1) then ERROR(`Terms not consistent`) fi;
 
   rows:=NULL;
-  for r from 2 to nops(KK1) do
+  for r in KK:-K[n1]:-S[t1]:-C do
      cols:=NULL;
-     u:= evalm(mis-convert([seq(sis[i],i=KK1[r][2])],`+` )*dis);
-     for k to grps do if u[k]<0 then u[k]:=-u[k]-nis[k]-1; fi;od;
-     for c from 2 to nops(KK0) do
-        v:= evalm( mis- convert([seq(sis[i],i=KK0[c][2])],`+`)*dis ) ;
-        for k to grps do if v[k]<0 then v[k]:=-v[k]-nis[k]-1; fi;od;
-	if convert(KK0[c][2],set) subset convert(KK1[r][2],set) then
-	   pols:= convert(convert(KK1[r][2],set) minus convert(KK0[c][2],set), list);
-           subsvar:= KK1[r][1] minus KK0[c][1]; # partial Bezoutian
-           mat:= BezoutianPoly( [seq(f[k],k=pols)] ,u,v,nis,var, subsvar );
-        else
-          mat:= matrix( Sdim(nis,u), Sdim(nis,v), 0);
+     _u:= copy(r:-mdeg);
+     for k to grps do if _u[k]<0 then _u[k]:=-_u[k]-KK:-grp[k]-1; fi;od;
+     for c in KK:-K[n0]:-S[t0]:-C do
+        _v:= copy(c:-mdeg);
+        for k to grps do if _v[k]<0 then _v[k]:=-_v[k]-KK:-grp[k]-1; fi;od;
+        if c:-fis subset r:-fis then
+          pols:= r:-fis minus c:-fis;
+          subsvar:= r:-exp minus c:-fis; # partial Bezoutian
+          mat:= BezoutianPoly( [seq(f[k],k=pols)] ,_u, _v, KK:-grp, var, subsvar );
+    else
+          mat:= Matrix(r:-dim, c:-dim, 0, storage=sparse);
 	fi;
-	cols:= cols, convert(mat, Matrix);
+	cols:= cols, mat;
      od;
      rows:= rows,[cols] ;
   od;

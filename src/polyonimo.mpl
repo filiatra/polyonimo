@@ -18,15 +18,51 @@ description "Polyonimo Maple packages";
 
 option package;
 
-export resultant;
+export resultant, benchmark;
 
 local devel, ModuleLoad;
 
 $include "src/resultant.mm"
 
+$include "src/benchmark.mm"
+
 $include "src/devel.mm"
 
 ModuleLoad:= proc()
+
+    # Weyman cohomology group type
+    # H^{g_1+g_2+..+g_d} (mvc - deg_{i_1} - .. - deg_{i_p} =
+    # H^q(mdeg) = H^{g_1}(mdeg_1) x .. x H^{g_d}(mdeg_d)
+    #
+    # exp::set
+    # fis::set
+    # mdeg::Vector
+    # dim::integer
+    TypeTools[AddType]( WCOH, 'record(exp::set, fis::set, mdeg::Vector, dim::integer)' ); 
+
+    # Weyman component type K_{p,q}, v=p-q
+    #
+    # p::integer
+    # q::integer
+    # C::list(WCOH)
+    TypeTools[AddType]( WCOMP, 'record(p::integer, q::integer, C::list(WCOH))' ); # is "exp" constant?
+
+    # Weyman term type K_v
+    #
+    # nu::integer
+    # S::list(WCOMP)
+    TypeTools[AddType]( WTERM, 'record(v::integer,S::list(WCOMP))' );
+
+    # Weyman complex type K_{*}
+    #
+    # nv::integer
+    # ng::integer
+    # grp::Vector
+    # deg::Matrix
+    # mvc::Vector
+    # K::Array(WTERM)
+    TypeTools[AddType]( WCOMPLEX, 'record(nv::integer, ng::integer, grp::Vector,deg::Matrix,mvc::Vector, K::Array(WTERM))' );
+    
 lprint(`Polyonimo Maple Modules, Angelos Mantzaflaris, 2017`);
 end:
 # Explicitly call ModuleLoad here so the type is registered when this
