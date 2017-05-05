@@ -19,65 +19,66 @@ description "Polyonimo resultants Module";
 option package;
 
 export
-mDegree,
+# Bezout bound computations
 mBezout,
 mBezoutUnmixed,
-bruteSearch,
-#
+# Generators of multihomogeneous polynomials
 makePoly,
 makeSystem,
 makeExtremePoly,
-#
+# Automated computation of resultant matrix
 findResMatrix,
-#
+# Brute search
+bruteSearch,
+# Complex and matrix computation based on degree vector
 makeComplex,
 printComplex,
-makeMatrix;
+makeMatrix,
+# Utility
+mDegree;
 
 local 
 #export
+# Data structures and helpers for complex
 NewCOMPLEX,
 NewCOMP,
 NewTERM,
 NewCOH,
 makeKv,
 makeKpq,
-#
-blockStructure,
 dimension,
+blockStructure,
 firstTerm,
 lastTerm,
-#
+# Specific resultant formulas
 critVect,
 macVect,
 unmixedSylvVect,
 biVarSylvVect,
 bilinearSylvVect,
-#
-Sdim,
-dimKv,
-dimKvp,
-computeCoHdim,
-complexDim,
-CoHzero,
-CohDim,
-#
-multmap,
+# Polynomial manipulation
 coeffof,
-allvars,
 lstmonof,
+multmap,
 monbasis,
+allvars,
 homogenizePoly,
+# Brute search helpers
+isCohZero,
+nzCohDim,
+dimKv,
+dimKpq,
+dimHq,
+Sdim,
+allsums,
 is_determ,
 next_lex_rect,
-sort_dim,
 detStats,
-allsums,
+# sortFormulas -> compute all dimensions
 solveMatrixKernel,
-#
+# Matrix generator helpers
 Sylvmat,
 SylvmatIndex,
-#
 dBounds,
 Jdiscr,
 BezoutianPoly,
@@ -106,21 +107,23 @@ return Record('v'=_v, 'S'=_S);
 end:
 
 # K_{p,q}, v=p-q
-NewCOMP := proc(_p::integer, _q::integer, _C::list(WCOMP) := [])
+NewCOMP := proc(_p::integer, _q::integer, _C := []) # bug: _C::list(WCOMP)
 return Record('p'=_p, 'q'=_q, 'C'=_C);
 end:
 
 # H^q(mdeg)
-NewCOH := proc(_exp::set, _fis::set, grp::Vector, _mdeg::Vector)
-local i, prod := 1;
+NewCOH := proc(_fis::set, grp::Vector, _mdeg::Vector)
+local i, prod := 1, qq:= NULL;
     for i to Dimension(_mdeg) do
         if _mdeg[i]<0 then
             prod:= prod* numbcomb(-_mdeg[i]-1     , grp[i] );
+            qq:= qq, i; # extra
         else
             prod:= prod* numbcomb( _mdeg[i]+grp[i], grp[i] );
         fi;
     od;
-return Record('exp'=_exp, 'fis'=_fis, 'mdeg'=_mdeg, 'dim'=prod);
+#add(`if`(i<0, 1, 0), i=_mdeg); 
+return Record('exp'={qq}, 'fis'=_fis, 'mdeg'=_mdeg, 'dim'=prod );
 end:
 
 # First nonzero term in the complex (index bigger than last term)
@@ -162,6 +165,7 @@ dimension := overload(
 #########################################################################
 
 ### detStats
+# how many vectors yield which matrix dimension
 #todo: update wrt bruteSearch
 detStats := proc(dl::list)
 local t, i, j, c, d, n := nops(dl);
@@ -188,7 +192,7 @@ allsums := proc(nis::Vector)
     grps:=LinearAlgebra:-Dimension(nis): unassign('i');
 	unassign('n');
     n:=convert(nis, `+`);
-	summs := array(0..n):
+	summs := Array(0..n):
 	for i from 0 to n do
 	       summs[i]:={}
 	od:
@@ -283,7 +287,7 @@ critVect:= proc(nis::Vector, dis::Matrix)
 	local grps,n,r,s;
 	grps := Dimension(nis);
 	n:=convert(nis,`+`);
-    s:=convert([seq(Column(dis,i),i=1..n+1)],`+`);
+    s:=add(Column(dis,i),i=1..n+1);
 	r:= s - nis - Vector(grps,1);
 	r;
 end:
@@ -293,7 +297,7 @@ macVect:= proc(nis::Vector, dis::Matrix)
 	local grps,n,s;
 	grps := Dimension(nis);
 	n:=convert(nis,`+`);
-    s:=convert([seq(Column(dis,i),i=1..n+1)],`+`);
+    s:=add(Column(dis,i),i=1..n+1);
 	s - nis; #! differs by one from the critical degree..
 end:
 
@@ -400,127 +404,65 @@ end:
 
 
 ### Dimension of Kv
-dimKv:=proc(nis::Vector,dis::Matrix,mis::Vector,summs::array,Nu::integer)
+dimKv:=proc(nis::Vector,dis::Matrix,mis::Vector,Nu::integer)
  local n,grps, i,p, dimK;
 
- grps:=Dimension(nis):
-# if grps <> Dimension(dis)[1] then ERROR(`BAD DIMS`) fi;
-# if grps <> Dimension(mis) then ERROR(`BAD DIMS for m-vector`) fi;
+    grps:=Dimension(nis):
     unassign('i');
-    n:=convert(nis,`+`);
+    n:= convert(nis,`+`);
     dimK := 0;
     for p from max(0,Nu) to min(n+1,Nu+n) do
-        dimK := dimK + dimKvp(nis,dis,mis,Nu,p);
+        dimK := dimK + dimKpq(nis,dis,mis,p,p-Nu);
     od:
     eval(dimK);
 end:# dimKv
 
-#### Dimension of Kvp
-dimKvp:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer,p::integer)
-	local c,Kvp,n,grps,q,dim,k,v;
+#### Dimension of Kpq
+dimKpq:= proc(nis::Vector, dis::Matrix, mis::Vector, 
+              p::integer,q::integer)
+	local c,Kvp,grps,dim,k,v;
 	grps:=Dimension(nis);
-	n:=convert(nis, `+`); q:=p-nu;
-    dim:=0;	for c in choose([seq(1..n+1)],p) do
-                v := mis - convert([Vector(grps),seq(dis[..,i],i=c)],`+`);
-                dim:=dim + computeCoHdim(nis, q, v );
-            od;
-	RETURN(dim);
-end:# dimKvp
+    dim:=0;
+    for c in choose([seq(1..convert(nis,`+`)+1)],p) do
+        v := mis - add(dis[..,i],i=c);
+        dim:=dim + dimHq(nis, v, q);
+        #dimHq(nis, v, q);
+    od;
+    RETURN(dim);
+end:# dimKpq
 
-
-### Dimension of Kv,p
-CohDim:= proc(KKvp, nis::Vector, dis::Matrix, mis::Vector)
-  local i, h, dim, prod, _u, n;
-
-  n:=convert(nis, `+`);
-
-  dim:= 0;
-  for h from 2 to nops(KKvp) do
-	_u:= mis-convert([Vector(n),seq(dis[..,i],i=KKvp[h][2])],`+` );
-	prod:=1; #compute dim H^q
-	for i from 1 to Dimension(nis) do
-	   if _u[i]<0 then
-		prod:= prod* numbcomb( -_u[i]-1    ,nis[i] );
-	   else prod:= prod* numbcomb( _u[i]+nis[i],nis[i] );
-	   fi;
-	od;
-	dim:= dim + prod ;
-  od;
-  dim;
+# Dimension of H^q(mpd)
+dimHq := proc(nis::Vector, mpd::Vector, q::integer)
+local i, k:= 1, dim:=1;
+    if isCohZero(nis,mpd,q) then return 0; else return nzCohDim(nis,mpd); fi:
 end:
 
-computeCoHdim := proc(nis::Vector,q::integer,mpd::Vector )
- local r, i, nonz, goodsum, dimH,dimHs, zerotest, summs;
-
-    summs:=allsums(nis): ##ADD as argument to save time
-    r:=Dimension(nis):
-    dimH:=0;
-    for nonz in summs[q] do  # sum_summs
-        goodsum:=false;
-        dimHs:=1;
-        i:=0;
-        while dimHs>0 and i<r do
-            i:=i+1;  # prod
-            if member(i,nonz) then # H^ni (mpd_i)
-                if mpd[i] >= -nis[i] then #print(i,nonz,mpd[i],nis[i]);
-                    goodsum:=true; dimHs:=0;
-                else dimHs := dimHs * numbcomb(-mpd[i]-1,nis[i]); fi;
-            else if mpd[i] < 0 then #print(i,mpd[i]);
-                     goodsum:=true; dimHs := 0;
-                 else dimHs := dimHs * numbcomb(mpd[i]+nis[i],nis[i]); fi;
-            fi;
-        od:#while (i)
-        if not goodsum then
-            if dimHs=0 then ERROR(`BAD computation`) fi;
-        fi;
-        dimH := dimH + dimHs;
-    od:
-    eval(dimH);
-end:    # coHdim
-
-# Input: A Complex
-# Output: the dimension of all non-zero cohomology groups
-complexDim := proc (KK)
-local Kv, h, u, prod, i, r, d1, dd, n, grps;
-    dd:= NULL;
-    n:=convert(convert(KK[2],list),`+`);
-	grps := Dimension(KK[2]);
-
-    #compute block dimensions
-    for Kv in KK[1] do
-        d1:=NULL;
-        for r from 2 to nops(Kv) do
-            for h from 2 to nops(Kv[r]) do
-                u:= KK[4]-
-                convert([Vector(grps),seq(Column(KK[3],i),i=Kv[r][h][2])],`+`);
-                prod:=1; #compute dim H^q
-                for i from 1 to grps do
-                    if u[i]<0 then
-                        prod:= prod* numbcomb( -u[i]-1    ,KK[2][i] );
-                    else 
-                        prod:= prod* numbcomb( u[i]+KK[2][i],KK[2][i] );
-                    fi;
-                od;
-                d1:= d1, prod;
-                #CohDim(Kv[r], KK[2], KK[3], KK[4], KK[5]); #Kp, l, d, s, m                
-            od:
-        od;
-        dd:= dd, [d1];
-    od:
-    dd;
-end:
-
-### true iff H^q(mpd)=0
-CoHzero := proc(grp::set, nis::Vector, mpd::Vector)
-  local i;
+# Check for vanishing of H^q(mpd)
+isCohZero := proc(nis::Vector, mpd::Vector, q::integer)
+local i, qq::integer := 0;
     for i to Dimension(nis) do
-        if member(i,grp) then
-            if mpd[i] >= -nis[i] then RETURN(true); fi;
+        if mpd[i] < -nis[i] then 
+            qq:= qq + nis[i]; 
+        else 
+            if mpd[i] < 0 then 
+                return true;
+            fi:
+        fi:
+    od;
+   return(q<>qq);
+end:
+
+#Dimension of a non-zero H^q(mpd)
+nzCohDim := proc(nis::Vector, mpd::Vector)
+local i, dim::integer :=1;
+    for i to Dimension(nis) do
+        if mpd[i]<0 then
+            dim:=dim*numbcomb(-mpd[i]-1,nis[i]);
         else
-            if mpd[i] < 0 then RETURN(true); fi;
+            dim:=dim*numbcomb(mpd[i]+nis[i],nis[i]); 
         fi;
     od;
-    RETURN(false);
+return dim;
 end:
 
 #########################################################################
@@ -529,14 +471,13 @@ end:
 
 ### Compute the Wayman Complex
 makeComplex := proc(nis::Vector, dis::Matrix, mis::Vector)
-    local kfirst, klast:= NULL, i,summs, Kv, KK, tmp := NULL;
+    local kfirst, klast:= NULL, i, Kv, KK, tmp := NULL;
 
-    summs:=allsums(nis);
     KK:= NewCOMPLEX(nis,dis,mis);
 
 	#for i in seq(-e, e=-n-1..n) do
 	for i from -KK:-nv to KK:-nv + 1 do
-		Kv := makeKv(nis,dis,mis,i,summs);
+		Kv := makeKv(nis,dis,mis,i);
 		if not Kv:-S = [] then
 			tmp := tmp, Kv;
             if ( klast=NULL ) then
@@ -551,43 +492,39 @@ makeComplex := proc(nis::Vector, dis::Matrix, mis::Vector)
 end:
 
 ### Make term Kv###
-makeKv:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer, summs::array)
-	local b, Kv, n, p, Kvp, tmp := NULL;
+makeKv:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer)
+	local b, Kv, n, p, Kpq, tmp := NULL;
     n:=convert(nis,`+`);
 
     Kv:= NewTERM(nu);
     for p in seq(0..n+1) do
-        Kvp := makeKpq(nis,dis,mis,nu,p, summs );
-        if not Kvp:-C = [] then
-            tmp := tmp, Kvp;
+        Kpq := makeKpq(nis,dis,mis,nu,p);
+        if not Kpq:-C = [] then
+            tmp := tmp, Kpq;
 		fi;	
 od;
     Kv:-S := [tmp];
     return Kv;
 end:
 
-###### Make term Kv,p
-makeKpq:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer, p::integer, summs::array)
-	local c,Kvp,n,q,s, grps, mdeg, tmp := NULL;
+###### Make term Kp,q
+makeKpq:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer, p::integer)
+	local c,n,q,s, grps, mdeg, tmp := NULL;
 	n:=convert(nis, `+`);
 	grps := Dimension(nis);
     q:=p-nu;
-    Kvp:= NewCOMP(p,q);
 	if q<0 or q>n then 
-     return Kvp;
+     return NewCOMP(p,q);
     fi;
-
     for c in choose({seq(1..n+1)},p) do # improve ?
-        for s in summs[q] do
-            mdeg := mis-convert([Vector(grps),seq(Column(dis,i),i=c)],`+`):
-            if not CoHzero(s, nis, mdeg ) then
-                tmp := tmp, NewCOH(s, c, nis, mdeg); #
-                break;
-            fi;
-od;
-od;
-     Kvp:-C := [tmp];
-     return Kvp;
+          mdeg := mis-add(dis[..,i],i=c):
+          if not isCohZero(nis, mdeg, q) then
+              tmp := tmp, NewCOH(c, nis, mdeg, grp); #
+          fi;
+     od;
+#print("NewCOMP(p,q,[tmp])",NewCOMP(p,q,[tmp])); # BUG
+return NewCOMP(p,q,convert([tmp],list));
+#Kpq:= NewCOMP(p,q); Kpq:-C := [tmp]: Kpq;
 end:
 
 
@@ -683,16 +620,16 @@ end:
 findResMatrix := proc(nis::Vector, dis::Matrix, ivar::list(symbol) :=[],
                    mis::Vector := Vector(), 
                    letters::list(symbol) := ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o'])
-    local vv, KK::WCOMPLEX, sys, var::list, mvec::Vector;
+    local vv,vd,  KK::WCOMPLEX, sys, var::list, mvec::Vector;
 
     if (Dimension(mis)=0) then
-        vv:= bruteSearch(nis,dis):
+        vv, vd := bruteSearch(nis,dis):
         if nops(vv)=0 then
             lprint(`No matrix found.`);
             return Matrix();
         else
             mvec := vv[-1];
-            lprint(`Degree vector `, convert(mvec,list));
+            lprint(`Degree vector `, convert(mvec,list), `dimension`, vd[-1] );
         fi:
     else
         mvec := mis;
@@ -839,13 +776,13 @@ local i,j,row,col, vars, mat;
     col := [monbasis(nis,sp2,var)];    
     vars:= allvars(nis,var);
     
-    mat := NULL;
+    mat := Matrix(nops(row), nops(col), storage=sparse);
     for i to nops(row) do
         for j to nops(col) do
-            mat := mat, coeffof(expand(col[j]/row[i]), f , vars ) ;
+            mat[i,j] := coeffof(expand(col[j]/row[i]), f , vars );
         od;
     od;
-    Matrix(nops(row),nops(col),[mat]); #,storage=sparse
+   return mat;
 end:
 
 ###return the coeff. of p in variables var of the monomial m:
@@ -988,22 +925,23 @@ end:
 # Computational search for degree vectors
 #########################################################################
 
-is_determ := proc(nis::Vector,dis::Matrix,mis::Vector, summs::array)
- local n,grps, Nu, i,p,c, s,q;
+is_determ := proc(nis::Vector,dis::Matrix,mis::Vector)
+ local n,grps, Nu, i,p,c, s: # A::table
  grps:=Dimension(nis):
 # if grps <> Dimension(dis) then ERROR(`BAD DIMS`) fi;
 # if grps <> Dimension(mis) then ERROR(`BAD DIMS for m-vector`) fi;
     unassign('i');
     n:=convert(nis, `+`);
 
-    for Nu in {-1,2} do
+    # Maple 16:
+    #c := firstcomb[{seq(1..n+1)},p]; .. combinat[nextcomb](c,p)
+
+    for Nu in [2,-1] do
         for p from max(0,Nu) to min(n+1,Nu+n) do
             for c in choose([seq(1..n+1)],p) do
-                q := p-Nu:
-                for s in summs[q] do
-                    if not CoHzero(s,nis,mis-convert([Vector(grps),seq(dis[..,i],i=c)],`+`))
+#                    if not isCohZero(nis,mis-convert([Vector(grps),seq(dis[..,i],i=c)],`+`), p-Nu)
+                    if not isCohZero(nis,mis-add(dis[..,i],i=c), p-Nu)
                     then RETURN(false) fi:
-                od:
             od:
         od:
     od:
@@ -1027,13 +965,6 @@ next_lex_rect:=proc(mis::Vector,low::Vector,upp::Vector)
  eval(0);
 end:# next_lex_rect
 
-### true iff l1<l2
-sort_dim:=proc(l1,l2)
- local i;
- if l1[-1]<l2[-1] then RETURN(true)
- else RETURN(false)  fi;
-end: # sort_dim
-
 dBounds := proc(nis::Vector,dis::Matrix)
 local grps, low, upp, i;
     grps:=Dimension(nis):
@@ -1055,15 +986,12 @@ end:
 
 
 bruteSearch := proc(nis::Vector,dis::Matrix)
- local	cand,
-	tmp, misD, low,upp, grps,n,i, goodmis, summs, cnt,
-	msmall,small,mbig,big;
+ local	cand::Vector, low, upp, grps, n, i, goodmis, cnt;
 
  grps:=Dimension(nis):
  n:=convert(nis, `+`);
 
- goodmis:={};
- summs:=allsums(nis):
+ goodmis:=NULL;
 
  #compute the bounds
  low, upp := dBounds(nis,dis);
@@ -1085,10 +1013,10 @@ bruteSearch := proc(nis::Vector,dis::Matrix)
 # od:#i
 
      if #msmall and mbig and
-     is_determ(nis,dis,cand,summs) then
+     is_determ(nis,dis,cand) then
 #         print("found",cand);
-      misD:=[op(convert(cand,list)), dimKv(nis,dis,cand,summs,0)];
-      goodmis:=eval(goodmis) union {eval(misD)};
+#      misD:=[op(convert(cand,list)), dimKv(nis,dis,cand,0)];
+      goodmis:= goodmis, cand;
   fi;
   cand := next_lex_rect(cand,low,upp);
 
@@ -1100,19 +1028,17 @@ bruteSearch := proc(nis::Vector,dis::Matrix)
 # tmp :=product(%[i],i=1..grps);
 # if cnt-1 <> tmp then ERROR(`bad count`,cnt-1,tmp) fi;
 
-  goodmis := sort(convert(goodmis,list), sort_dim);
-  low := NULL;
-  upp := NULL;
-  for cand in goodmis do
-    low := low, Vector(cand[1..grps]);
-    upp := upp, cand[-1];
-  od:
-
-    if _nresults = 1 or _nresults = undefined then
-        return [low];
+  if _nresults = 1 or _nresults = undefined then
+      return [goodmis];
     else
-        return [low], [upp];
-    fi:
+      upp := NULL;
+      for cand in [goodmis] do
+      upp := upp, dimKv(nis,dis,cand,0);
+      od:
+      upp:=[upp]:
+      low := sort(upp, output=permutation);
+      return [goodmis][low], upp[low];
+  fi:
 end:	# bruteSearch
 
 
@@ -1148,7 +1074,7 @@ local N,i,j,k,vxi,s, mtr, mtr2;
   if nops(vx) <> N-1 then print(nops(lp), vx );
     ERROR(`The number of polynomials must be the number of variables +1 `);
   fi;
-  mtr := array(1..N,1..N);
+  mtr := Array(1..N,1..N);
   for i from 1 to N do mtr[i,1] := lp[i] od;
 
   for j from 2 to N do
@@ -1160,7 +1086,7 @@ local N,i,j,k,vxi,s, mtr, mtr2;
 
 #print(mtr);
 
-mtr2 := array(1..N,1..N);
+mtr2 := Array(1..N,1..N);
 for i from 1 to N do mtr2[i,1] := lp[i] od;
 
   for j from 2 to N do
@@ -1259,7 +1185,7 @@ n0::integer, t0::integer, f, var)
      od;
      rows:= rows,[cols] ;
   od;
-Matrix([rows]);
+Matrix([rows], storage=sparse);
 end:
 
 end:#end resultant
