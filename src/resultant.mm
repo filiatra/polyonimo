@@ -72,7 +72,6 @@ local
     dimHq,
     Sdim,
     getTerm,
-    allsums,
     is_determ,
     detStats,
     sortPerm,
@@ -81,7 +80,7 @@ local
     solveMatrixKernel,
 # Matrix generator helpers
     Sylvmat,
-    dBounds,
+    degreeBounds,
     Jdiscr,
     BezoutianPoly,
     Bezoutmat;
@@ -187,28 +186,7 @@ uses LinearAlgebra, combinat;
         od:
         [c];
     end:
-    
-### all q-sums by dynamic programming
-    allsums := proc(nis::Vector)
-    local n, grps, i, q, Subs, ss, summs;
-        grps:=LinearAlgebra:-Dimension(nis): unassign('i');
-        unassign('n');
-        n:=ColumnDimension(dis)-1;
-        summs := Array(0..n):
-        for i from 0 to n do
-            summs[i]:={}
-        od:
-        unassign('i');
-        Subs := subsets({seq(i,i=1..grps)}):
-        while not Subs[finished] do
-            ss:=Subs[nextvalue]();
-            q := 0:
-            for i in ss do q := q + nis[i] od;
-            summs[q] := summs[q] union {ss};
-        od:
-        eval(summs);
-    end:
-    
+        
 #Multidegree with respect to vector nis
     mDegree := proc(g, nis::Vector, var )
     local deg, i, vars;
@@ -446,13 +424,13 @@ uses LinearAlgebra, combinat;
     end:
     
 # Returns the q if a non-zero term K_{p,q} exists, or -1 otherwise
-    getTerm := proc(nis::Vector, mpd::Vector)
+    getTerm := proc(nis::Vector, mm::Vector, pd::Vector)
     local i, qq::integer := 0;
         for i to Dimension(nis) do
-            if mpd[i] < -nis[i] then 
+            if mm[i] + nis[i] < pd[i] then 
                 qq:= qq + nis[i]; 
             else 
-                if mpd[i] < 0 then 
+                if mm[i] < pd[i] then 
                     return(-1);
                 fi:
             fi:
@@ -496,23 +474,43 @@ uses LinearAlgebra, combinat;
 #########################################################################
     
 ### Compute the Wayman Complex
-    makeComplex := proc(nis::Vector, dis::Matrix, mis::Vector)
-    local kfirst, klast:= NULL, i, Kv, KK, tmp := NULL;
-        
+    makeComplex := proc(nis::Vector, dis::Matrix, mis::Vector, isDet::boolean := false) # note: 1 does not evaluate to true
+    local kfirst::integer, klast::integer, i, Kv, KK, tmp := NULL;
+
+     #if isDet then .. to do: iterate over mdegs
+
         KK:= NewCOMPLEX(nis,dis,mis);
-        
-        for i from -KK:-nv to KK:-nv + 1 do
+        if isDet then 
+            kfirst := 0;
+            klast  := 1;
+        else
+            kfirst := -KK:-nv;
+            klast  := KK:-nv + 1;
+        fi:
+
+        # left side
+        for i from 0 to kfirst by -1 do
             Kv := makeKv(nis,dis,mis,i);
-            if not Kv:-S = [] then
+            if Kv:-S = [] then
+                kfirst := i+1;
+                break;
+            else
+                tmp := Kv, tmp;
+            fi:
+        od;
+
+        # right side
+        for i from 1 to klast do
+            Kv := makeKv(nis,dis,mis,i);
+            if Kv:-S = [] then
+                klast:= i-1;
+                break;
+            else
                 tmp := tmp, Kv;
-                if ( klast=NULL ) then
-                    klast:= i;
-                else
-                    kfirst := i;
-                fi:
             fi;
         od;
-        KK:-K := Array(klast..kfirst,[tmp], datatype=WTERM);
+
+        KK:-K := Array(kfirst..klast, [tmp], datatype=WTERM);
         return KK;
     end:
     
@@ -661,13 +659,13 @@ uses LinearAlgebra, combinat;
                 return Matrix();
             else
                 mvec := vv[-1];
-                lprint(`Degree vector `, convert(mvec,list), `dimension`, vd[-1] );
+                lprint(`Degree vector `, convert(mvec,list), `Dimension`, vd[-1] );
             fi:
         else
             mvec := mis;
         fi:
         
-        KK := makeComplex(nis, dis, mvec):
+        KK := makeComplex(nis, dis, mvec, true):
         printComplex(KK,1);
         
         if (ivar=[]) then
@@ -961,7 +959,7 @@ uses LinearAlgebra, combinat;
     columnsum:= proc(dis::Matrix, c)
     option inline;
         convert([Vector(RowDimension(dis)),seq(dis[..,i],i=c)],`+`)
-# Maple>13: add(dis[..,i],i=c)
+        # Maple>13: add(dis[..,i],i=c)
     end:
     
     sortPerm := proc(data)
@@ -981,7 +979,7 @@ uses LinearAlgebra, combinat;
         for p from 0 to n1 do
           c := utility:-first_comb(n1,p);
           while c<>NULL do
-             q:= getTerm(nis,mis-columnsum(dis,c) );
+             q:= getTerm(nis,mis, columnsum(dis,c) );
              if q<>-1 and p <> q and p <> q+1 then RETURN(false) fi:
             c := utility:-next_comb(c,n1);
           od:
@@ -990,7 +988,7 @@ uses LinearAlgebra, combinat;
         RETURN(true);
     end:	# is_determ
         
-    dBounds := proc(nis::Vector,dis::Matrix)
+    degreeBounds := proc(nis::Vector,dis::Matrix)
     local grps, low, upp, i;
         grps:=Dimension(nis):
         
@@ -1009,21 +1007,60 @@ uses LinearAlgebra, combinat;
         low,upp;    
     end:
     
-    
+    # Discover all vectors by brute force
     bruteSearch := proc(nis::Vector,dis::Matrix)
-    local cand::Vector, low, upp, grps, n, i, goodmis;
-        
+    local cand::Vector, low, upp, result, grps, n1, p, ind, c, cnt:=1, mmd, q;
         grps:=Dimension(nis):
-        n:=ColumnDimension(dis);
-        
-        goodmis:=NULL;
+        n1:=ColumnDimension(dis):
+
+        result:=NULL;
         
         #compute the bounds
-        low, upp := dBounds(nis,dis);
-# LOOSEN BOUNDS (for testing)
-#low := low - Vector(grps,2);
-#upp := upp + Vector(grps,2);
+        low, upp := degreeBounds(nis,dis);
+        # LOOSEN BOUNDS (for testing)
+        #low := low - Vector(grps,2);
+        #upp := upp + Vector(grps,2);
 
+        # Impl. 1 vs 2
+        #print("vec:", 2^(ColumnDimension(dis)),
+        #"cand:", mul(upp[i]-low[i]+1, i=1..Dimension(low)) );
+
+if true then
+# Implementation 1
+        ind := Array(1..utility:-num_points(low,upp), 
+                     fill=true, datatype=boolean):
+        for p from 0 to n1 do
+            c := utility:-first_comb(n1,p);
+            while c<>NULL do
+                
+                mmd := columnsum(dis,c):
+                
+                cand:= utility:-first_point(low,upp); cnt:=1:
+                while cand <> NULL do
+                    if ind[cnt]=true then
+                        q:= getTerm(nis, cand, mmd);
+                        if q<>-1 and p <> q and p <> q+1 then 
+                            ind[cnt]:=false; 
+                        fi:
+                    fi:
+                    cand := utility:-next_point(cand,low,upp); cnt := cnt+1:
+                od: #while cand
+                 c := utility:-next_comb(c,n1);
+            od:# while c
+        od: #for p
+
+        cand:= utility:-first_point(low,upp);
+        cnt:=1:
+        while cand <> NULL do
+            if ind[cnt]=true then
+                result := result, cand;
+            fi:
+            cand := utility:-next_point(cand,low,upp); cnt := cnt+1:
+        od:
+        
+else
+        
+# Implementation 2
         cand:= utility:-first_point(low,upp);
         while cand <> NULL do
             # necessary condition
@@ -1037,23 +1074,24 @@ uses LinearAlgebra, combinat;
             
             if #msmall and mbig and
             is_determ(nis,dis,cand) then
-#      print("found",cand);
-#      misD:=[op(convert(cand,list)), dimKv(nis,dis,cand,0)];
-                goodmis:= goodmis, cand;
+                #print("found",cand);
+                result:= result, cand;
             fi;
             cand := utility:-next_point(cand,low,upp);
         od;
+
+fi: # impl
         
         if _nresults = 1 or _nresults = undefined then
-            return [goodmis];
+             return [result];
         else
             upp := NULL;
-            for cand in [goodmis] do
+            for cand in [result] do
                 upp := upp, dimKv(nis,dis,cand,0);
             od:
             upp:=[upp]:
             low := sortPerm(upp);
-            return [goodmis][low], upp[low];
+            return [result][low], upp[low];
         fi:
     end:	# bruteSearch
     

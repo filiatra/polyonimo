@@ -30,9 +30,11 @@ first_mon,
 next_mon,
 num_mon,
 first_point,
+num_points,
 next_point,
 first_binary,
-next_binary;
+next_binary,
+allQsums;
 
 local 
 mac_dim,
@@ -226,7 +228,16 @@ end:
 # First lattice point in the box [low,upp]
 #
 first_point:= proc(low::Or(list,Vector),upp::Or(list,Vector))
-    return low;
+option inline;
+    low;
+end:
+
+#
+# Number of lattice points in the box [low,upp]
+#
+num_points:= proc(low::Or(list,Vector),upp::Or(list,Vector))
+option inline;
+    mul(upp[k]-low[k]+1, k=1..LinearAlgebra:-Dimension(low));
 end:
 
 #
@@ -234,24 +245,19 @@ end:
 # equiv: lex-next point in the cartesian product [low[1],upp[1]]x..x[low[n],upp[n]]
 #
 next_point:=proc(p::Or(list,Vector),low::Or(list,Vector),upp::Or(list,Vector))
-local np, i, n;
+local np::Vector, i, n;
 
     # = on vectors bug Maple 13
     if LinearAlgebra:-Equal(p,upp) then return NULL; fi; #finished
-    np:=copy(p);#bug Maple 13
+    np:=copy(p);#bug Maple 13: p passed by reference, terminating value..
     n := LinearAlgebra:-Dimension(p);#nops(p);
 
     i:=n;
-    while np[i]=upp[i] do
-        i:=i-1;
-    od;
-    np[i]:=np[i]+1;
+    while p[i]=upp[i] do i:=i-1; od;
+    np[i]:=p[i]+1;
 
     i:=i+1;
-    while i<=n do
-        np[i]:=low[i];
-        i:=i+1;
-    od;
+    while i<=n do np[i]:=low[i]; i:=i+1; od;
 np;
 end:
 
@@ -310,6 +316,25 @@ next_binary:= proc(s::Or(list,Vector))
     return [seq(0,i=1..n)];
 end:
 
-
+### all q-sums by dynamic programming
+    allQsums := proc(nis::Vector)
+    local n, grps, i, q, Subs, ss, summs;
+        grps:=LinearAlgebra:-Dimension(nis): unassign('i');
+        unassign('n');
+        n:=ColumnDimension(dis)-1;
+        summs := Array(0..n):
+        for i from 0 to n do
+            summs[i]:={}
+        od:
+        unassign('i');
+        Subs := subsets({seq(i,i=1..grps)}):
+        while not Subs[finished] do
+            ss:=Subs[nextvalue]();
+            q := 0:
+            for i in ss do q := q + nis[i] od;
+            summs[q] := summs[q] union {ss};
+        od:
+        eval(summs);
+    end:
 
 end: #utility
