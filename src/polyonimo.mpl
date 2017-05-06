@@ -18,9 +18,11 @@ description "Polyonimo Maple packages";
 
 option package;
 
-export resultant, benchmark;
+export resultant, benchmark, utility;
 
 local devel, ModuleLoad;
+
+$include "src/utility.mm"
 
 $include "src/resultant.mm"
 

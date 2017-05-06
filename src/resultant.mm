@@ -71,9 +71,9 @@ local
     dimKpq,
     dimHq,
     Sdim,
+    getTerm,
     allsums,
     is_determ,
-    next_lex_rect,
     detStats,
     sortPerm,
     columnsum,
@@ -193,7 +193,7 @@ uses LinearAlgebra, combinat;
     local n, grps, i, q, Subs, ss, summs;
         grps:=LinearAlgebra:-Dimension(nis): unassign('i');
         unassign('n');
-        n:=convert(nis, `+`);
+        n:=ColumnDimension(dis)-1;
         summs := Array(0..n):
         for i from 0 to n do
             summs[i]:={}
@@ -286,10 +286,10 @@ uses LinearAlgebra, combinat;
     
 # Critical degree  vector
     critVect:= proc(nis::Vector, dis::Matrix)
-    local grps,n,r,s;
+    local grps,n1,r,s;
         grps := Dimension(nis);
-        n:=convert(nis,`+`);
-        s:=add(Column(dis,i),i=1..n+1);
+        n1:=ColumnDimension(dis);
+        s:=add(Column(dis,i),i=1..n1);
         r:= s - nis - Vector(grps,1);
         r;
     end:
@@ -298,7 +298,7 @@ uses LinearAlgebra, combinat;
     macVect:= proc(nis::Vector, dis::Matrix)
     local grps,n,s;
         grps := Dimension(nis);
-        n:=convert(nis,`+`);
+        n:=ColumnDimension(dis)-1;
         s:=add(Column(dis,i),i=1..n+1);
         s - nis; #! differs by one from the critical degree..
     end:
@@ -357,7 +357,7 @@ uses LinearAlgebra, combinat;
     mBezout:= proc(nis::Vector, dis::Matrix, j::integer := -1)
     local k, fct, grps,n, dd;
         
-        n:=convert(nis,`+`);
+        n:=ColumnDimension(dis)-1;
         grps := Dimension(nis);
         if [grps,n+1] <> [Dimension(dis)] then ERROR(`BAD DIMS ! `) fi;
         
@@ -380,7 +380,7 @@ uses LinearAlgebra, combinat;
                           sis::Vector := Vector([seq(1,i=1..1+Dimension(nis))]) )
     description "Unmixed and Scaled Bezout bound";
     local grps,n;
-        n:=convert(nis,`+`);
+        n:=ColumnDimension(dis)-1;
         grps := Dimension(nis);
         RETURN(	convert([seq(dis[i]^nis[i],i=1..grps)],`*`)*
                 convert(convert(sis,list),`*`)*
@@ -411,7 +411,7 @@ uses LinearAlgebra, combinat;
         
         grps:=Dimension(nis):
         unassign('i');
-        n:= convert(nis,`+`);
+        n:= ColumnDimension(dis)-1;
         dimK := 0;
         for p from max(0,Nu) to min(n+1,Nu+n) do
             dimK := dimK + dimKpq(nis,dis,mis,p,p-Nu);
@@ -422,25 +422,50 @@ uses LinearAlgebra, combinat;
 #### Dimension of Kpq
     dimKpq:= proc(nis::Vector, dis::Matrix, mis::Vector, 
                   p::integer,q::integer)
-    local c,Kvp,grps,dim,k,v;
+    local c,Kvp,grps,dim,k,v, n1:= ColumnDimension(dis);
         grps:=Dimension(nis);
         dim:=0;
-        for c in choose([seq(1..convert(nis,`+`)+1)],p) do
+        c := utility:-first_comb(n1,p);
+        while c<>NULL do
             v := mis - columnsum(dis,c);
             dim:=dim + dimHq(nis, v, q);
-        od;
+            c := utility:-next_comb(c,n1);
+        od:
+#        for c in choose([seq(1..ColumnDimension(dis)-1+1)],p) do
+#            v := mis - columnsum(dis,c);
+#            dim:=dim + dimHq(nis, v, q);
+#        od;
         RETURN(dim);
     end:# dimKpq
     
 # Dimension of H^q(mpd)
     dimHq := proc(nis::Vector, mpd::Vector, q::integer)
     local i, k:= 1, dim:=1;
-        if isCohZero(nis,mpd,q) then return 0; else return nzCohDim(nis,mpd); fi:
+        if isCohZero(nis,mpd,q) then return 0; 
+        else return nzCohDim(nis,mpd); fi:
     end:
     
+# Returns the q if a non-zero term K_{p,q} exists, or -1 otherwise
+    getTerm := proc(nis::Vector, mpd::Vector)
+    local i, qq::integer := 0;
+        for i to Dimension(nis) do
+            if mpd[i] < -nis[i] then 
+                qq:= qq + nis[i]; 
+            else 
+                if mpd[i] < 0 then 
+                    return(-1);
+                fi:
+            fi:
+        od;
+        return(qq);
+    end:
+
 # Check for vanishing of H^q(mpd)
     isCohZero := proc(nis::Vector, mpd::Vector, q::integer)
     local i, qq::integer := 0;
+        #qq := add(`if`(mpd[i] < -nis[i], nis[i], 0), i=nis); 
+        #qz := add(`if`(mpd[i] < 0, nis[i], 0), i=nis); 
+        #return q==qq and q==qz
         for i to Dimension(nis) do
             if mpd[i] < -nis[i] then 
                 qq:= qq + nis[i]; 
@@ -493,11 +518,11 @@ uses LinearAlgebra, combinat;
     
 ### Make term Kv
     makeKv:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer)
-    local b, Kv, n, p, Kpq, tmp := NULL;
-        n:=convert(nis,`+`);
+    local b, Kv, n1, p, Kpq, tmp := NULL;
+        n1:=ColumnDimension(dis);
         
         Kv:= NewTERM(nu);
-        for p in seq(0..n+1) do
+        for p from 0 to n1 do
             Kpq := makeKpq(nis,dis,mis,nu,p);
             if not Kpq:-C = [] then
                 tmp := tmp, Kpq;
@@ -509,19 +534,29 @@ uses LinearAlgebra, combinat;
     
 ###### Make term Kp,q
     makeKpq:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer, p::integer)
-    local c,n,q,s, grps, mdeg, tmp := NULL;
-        n:=convert(nis, `+`);
+    local c,n1,q,s, grps, mdeg, tmp := NULL;
+        n1:=ColumnDimension(dis);
         grps := Dimension(nis);
         q:=p-nu;
-        if q<0 or q>n then 
+        if q<0 or q+1>n1 then 
             return NewCOMP(p,q);
         fi;
-        for c in choose({seq(1..n+1)},p) do # improve ?
+        c := utility:-first_comb(n1,p);
+        while c<>NULL do
             mdeg := mis-columnsum(dis,c):
             if not isCohZero(nis, mdeg, q) then
-                tmp := tmp, NewCOH(c, nis, mdeg, grp); #
-            fi;
-        od;
+                tmp := tmp, NewCOH(convert(c,set), nis, mdeg, grp);
+            fi:
+            c := utility:-next_comb(c,n1);
+        od:
+
+#        for c in choose({seq(1..n+1)},p) do # improve ?
+#            mdeg := mis-columnsum(dis,c):
+#            if not isCohZero(nis, mdeg, q) then
+#                tmp := tmp, NewCOH(c, nis, mdeg, grp); #
+#            fi;
+#        od;
+
 #print("NewCOMP(p,q,[tmp])",NewCOMP(p,q,[tmp])); # BUG
         return NewCOMP(p,q,convert([tmp],list));
 #Kpq:= NewCOMP(p,q); Kpq:-C := [tmp]: Kpq;
@@ -894,12 +929,12 @@ uses LinearAlgebra, combinat;
     
 ### Make multihomogeneous system
     makeSystem:= proc(nis::Vector, dis::Matrix, 
-                      coef:=['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o'][1..1+convert(nis,`+`)], 
+                      coef:=['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o'][1..ColumnDimension(dis)], 
                       var:= ['x','y','z','u','v','w','s','t'][1..Dimension(nis)] )
-    local i,n,lst;
-        n:=convert(nis,`+`);
+    local i,n1,lst;
+        n1:=ColumnDimension(dis);
         lst:=NULL;
-        for i from 1 to n+1 do
+        for i from 1 to n1 do
             lst:= lst, makePoly(nis, Column(dis,i), coef[i] ,var);
         od;
         [lst];
@@ -935,45 +970,26 @@ uses LinearAlgebra, combinat;
     end:
     
     is_determ := proc(nis::Vector,dis::Matrix,mis::Vector)
-    local n,grps, Nu, i,p,c, s: # A::table
+    local n1, grps, i, p, q, c: # A::table
         grps:=Dimension(nis):
-# if grps <> Dimension(dis) then ERROR(`BAD DIMS`) fi;
-# if grps <> Dimension(mis) then ERROR(`BAD DIMS for m-vector`) fi;
         unassign('i');
-        n:=convert(nis, `+`);
+        n1:=ColumnDimension(dis):
         
         # Maple 16:
-        #c := firstcomb[{seq(1..n+1)},p]; .. combinat[nextcomb](c,p)
-        
-        for Nu in [2,-1] do
-            for p from max(0,Nu) to min(n+1,Nu+n) do
-                for c in choose([seq(1..n+1)],p) do
-#                    if not isCohZero(nis,mis-convert([Vector(grps),seq(dis[..,i],i=c)],`+`), p-Nu)
-                    if not isCohZero(nis,mis-columnsum(dis,c), p-Nu)
-                    then RETURN(false) fi:
-                od:
-            od:
+        #c := firstcomb[{seq(1..n+1)},p]; .. combinat[nextcomb](c,p)        
+
+        for p from 0 to n1 do
+          c := utility:-first_comb(n1,p);
+          while c<>NULL do
+             q:= getTerm(nis,mis-columnsum(dis,c) );
+             if q<>-1 and p <> q and p <> q+1 then RETURN(false) fi:
+            c := utility:-next_comb(c,n1);
+          od:
         od:
+
         RETURN(true);
     end:	# is_determ
-    
-# find/return next vector (following mis) in lex-order
-    next_lex_rect:=proc(mis::Vector,low::Vector,upp::Vector)
-    local i, j, r, nxt;
         
-        nxt := copy(mis);
-        r :=Dimension(mis);
-        #if r <> vectdim(low) then ERROR(`BAD DIMS`) fi;
-        #if r <> vectdim(upp) then ERROR(`BAD DIMS`) fi;
-        for i from r to 1 by -1 do if mis[i]<upp[i] then
-                                       nxt[i]:=mis[i]+1;
-                                       for j from i+1 to r do nxt[j]:=low[j]; od;
-                                       RETURN(nxt);
-                                   fi;
-        od;
-        eval(0);
-    end:# next_lex_rect
-    
     dBounds := proc(nis::Vector,dis::Matrix)
     local grps, low, upp, i;
         grps:=Dimension(nis):
@@ -995,10 +1011,10 @@ uses LinearAlgebra, combinat;
     
     
     bruteSearch := proc(nis::Vector,dis::Matrix)
-    local	cand::Vector, low, upp, grps, n, i, goodmis, cnt;
+    local cand::Vector, low, upp, grps, n, i, goodmis;
         
         grps:=Dimension(nis):
-        n:=convert(nis, `+`);
+        n:=ColumnDimension(dis);
         
         goodmis:=NULL;
         
@@ -1007,35 +1023,26 @@ uses LinearAlgebra, combinat;
 # LOOSEN BOUNDS (for testing)
 #low := low - Vector(grps,2);
 #upp := upp + Vector(grps,2);
-        
-        cand:=low;
-        cnt:=1;
-        while cand <> 0 do
-            
+
+        cand:= utility:-first_point(low,upp);
+        while cand <> NULL do
             # necessary condition
-#  msmall := false; mbig:=false;
-# for i from 1 to grps do
-#   if cand[i]<small*dis[i] then msmall:=true; break; fi;
-# od:#i
-# for i from 1 to grps do
-#   if cand[i] >= big*dis[i]-nis[i] then mbig:=true; break; fi;
-# od:#i
+            #  msmall := false; mbig:=false;
+            # for i from 1 to grps do
+            #   if cand[i]<small*dis[i] then msmall:=true; break; fi;
+            # od:#i
+            # for i from 1 to grps do
+            #   if cand[i] >= big*dis[i]-nis[i] then mbig:=true; break; fi;
+            # od:#i
             
             if #msmall and mbig and
             is_determ(nis,dis,cand) then
-#         print("found",cand);
+#      print("found",cand);
 #      misD:=[op(convert(cand,list)), dimKv(nis,dis,cand,0)];
                 goodmis:= goodmis, cand;
             fi;
-            cand := next_lex_rect(cand,low,upp);
-            
-            cnt:=cnt+1;
+            cand := utility:-next_point(cand,low,upp);
         od;
-        
-# matadd(matadd(upp,low,1,-1),Vector(grps,1));
-# unassign('i');
-# tmp :=product(%[i],i=1..grps);
-# if cnt-1 <> tmp then ERROR(`bad count`,cnt-1,tmp) fi;
         
         if _nresults = 1 or _nresults = undefined then
             return [goodmis];
