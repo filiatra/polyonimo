@@ -34,7 +34,7 @@ export
     makeComplex,
     printComplex,
     makeMatrix,
-    SylvmatIndex, #to do
+    matrixIndex,
 # Utility
     mDegree;
     
@@ -49,8 +49,6 @@ local
     makeKpq,
     dimension,
     blockStructure,
-    firstTerm,
-    lastTerm,
 # Specific resultant formulas
     critVect,
     macVect,
@@ -72,7 +70,7 @@ local
     dimHq,
     Sdim,
     getTerm,
-    is_determ,
+    isDeterminantal,
     detStats,
     sortPerm,
     columnsum,
@@ -94,22 +92,25 @@ uses LinearAlgebra, combinat;
 #########################################################################
     
 # K_{*}
-    NewCOMPLEX := proc(_grp::Vector, _deg::Matrix, _mvc::Vector, _K::Array(WTERM):=[])
-        
+    NewCOMPLEX := proc(_grp::Vector, _deg::Matrix, _mvc::Vector, _fill::boolean := false)
+        local n1, KK, i, tp, tv := NULL;
+         n1 := ColumnDimension(_deg);
         if Dimension(_mvc)<>Dimension(_grp) then
             ERROR(`Wrong dimensions in degree vectors.`); fi;
         
-        return Record('nv'=convert(_grp,`+`), 'ng'=Dimension(_grp), 'grp'=_grp, 'deg'=_deg, 'mvc'=_mvc, 'K'=K);
+        return Record('nv'=convert(_grp,`+`), 'ng'=Dimension(_grp), 
+                      'grp'=_grp, 'deg'=_deg, 'mvc'=_mvc, 
+                      'K'= Array(-n1-1..n1) );
     end:
     
 # K_{v}
-    NewTERM := proc(_v::integer, _S:= [])
-        return Record('v'=_v, 'S'=_S);
+    NewTERM := proc(_v::integer, _n::integer)
+        return Array(max(0,_v)..min(_n+1,_n+_v));
     end:
     
 # K_{p,q}, v=p-q
-    NewCOMP := proc(_p::integer, _q::integer, _C := []) # bug: _C::list(WCOMP)
-        return Record('p'=_p, 'q'=_q, 'C'=_C);
+    NewCOMP := proc(_C::list(WCOH) := [])
+        return _C;
     end:
     
 # H^q(mdeg)
@@ -123,20 +124,10 @@ uses LinearAlgebra, combinat;
                 prod:= prod* numbcomb( _mdeg[i]+grp[i], grp[i] );
             fi;
         od;
-#add(`if`(i<0, 1, 0), i=_mdeg); 
+        #add(`if`(i<0, 1, 0), i=_mdeg); 
         return Record('exp'={qq}, 'fis'=_fis, 'mdeg'=_mdeg, 'dim'=prod );
     end:
-    
-# First nonzero term in the complex (index bigger than last term)
-    firstTerm := proc(KK::WCOMPLEX)
-        op(op(KK:-K)[1])[2];
-    end:
-    
-# Last nonzero term in the complex (index lower than first term)
-    lastTerm := proc(KK::WCOMPLEX)
-        op(op(KK:-K)[1])[1];
-    end:
-    
+        
 # Dimension of complex terms
     dimension := overload(
         [
@@ -150,7 +141,7 @@ uses LinearAlgebra, combinat;
             
             proc(b::WCOMP) option overload;
             local v, res := 0;
-                for v in b:-C do
+                for v in b do
                     res := res + v:-dim;
                 od:
                 return res;
@@ -202,7 +193,6 @@ uses LinearAlgebra, combinat;
 # Plain Sylv: solveMatrixKernel(M,v[2]);
 #
 # Note: values to reciprocals should be considered false
-#
     solveMatrixKernel := proc(M::Matrix, cols::list, dual:= false)
     local V, c, ct, ksz, i, j, vals, psol, sols, l, dn, ind, vv, nvv, cnt, k;
         # Assume that the matrix is transposed
@@ -281,8 +271,8 @@ uses LinearAlgebra, combinat;
         s - nis; #! differs by one from the critical degree..
     end:
     
-# degree vector for unmixed Sylvester matrix
-# We use the identity permutation
+# Degree vector for unmixed Sylvester matrix
+# we use the identity permutation
     unmixedSylvVect:= proc(nis::Vector, dis::Vector)
     local grps, i, mis, s;
         grps := Dimension(nis);
@@ -296,7 +286,7 @@ uses LinearAlgebra, combinat;
     end:
     
     
-# degree vector for bivariate Koszul matrix
+# Degree vector for bivariate Koszul matrix
     biVarSylvVect:= proc(nis::Vector, dis::Matrix, ind::integer:=1)
         if ind=1 then
             RETURN(Vector([add(deg[1,i],i=1..n+1)-1, -1 ]) );
@@ -353,7 +343,7 @@ uses LinearAlgebra, combinat;
         fi:
     end:
     
-#Unmixed and Scaled Bezout bound
+# Unmixed and Scaled Bezout bound
     mBezoutUnmixed:= proc(nis::Vector, dis::Vector,
                           sis::Vector := Vector([seq(1,i=1..1+Dimension(nis))]) )
     description "Unmixed and Scaled Bezout bound";
@@ -409,10 +399,6 @@ uses LinearAlgebra, combinat;
             dim:=dim + dimHq(nis, v, q);
             c := utility:-next_comb(c,n1);
         od:
-#        for c in choose([seq(1..ColumnDimension(dis)-1+1)],p) do
-#            v := mis - columnsum(dis,c);
-#            dim:=dim + dimHq(nis, v, q);
-#        od;
         RETURN(dim);
     end:# dimKpq
     
@@ -456,7 +442,7 @@ uses LinearAlgebra, combinat;
         return(q<>qq);
     end:
     
-#Dimension of a non-zero H^q(mpd)
+# Dimension of a non-zero H^q(mpd)
     nzCohDim := proc(nis::Vector, mpd::Vector)
     local i, dim::integer :=1;
         for i to Dimension(nis) do
@@ -474,8 +460,33 @@ uses LinearAlgebra, combinat;
 #########################################################################
     
 ### Compute the Wayman Complex
-    makeComplex := proc(nis::Vector, dis::Matrix, mis::Vector, isDet::boolean := false) # note: 1 does not evaluate to true
-    local kfirst::integer, klast::integer, i, Kv, KK, tmp := NULL;
+    makeComplex := proc(nis::Vector, dis::Matrix, mis::Vector, isDet::boolean := true) # note: 1 does not evaluate to true
+    local n1, p, c, mmd, q, kfirst::integer, klast::integer, i, Kv, KK, tmp := NULL;
+
+$define ImplNew 1
+$ifdef ImplNew
+
+    KK:= NewCOMPLEX(nis,dis,mis);
+    n1 := ColumnDimension(dis);
+
+    for p from 0 to n1 do
+        c := utility:-first_comb(n1,p);
+        while c<>NULL do
+            mmd := columnsum(dis,c):
+                    q:= getTerm(nis, mis, mmd);
+                    if q<>-1 then
+               if KK:-K[p-q] = 0 then KK:-K[p-q]:= NewTERM(p-q,n1-1); fi:
+               if KK:-K[p-q][p] = 0 then KK:-K[p-q][p]:= NewCOMP(); fi:
+                  KK:-K[p-q][p]:= [op(KK:-K[p-q][p]), 
+                  NewCOH(convert(c,set), nis,Add(mis,mmd,1,-1), nis)];
+                    fi:
+            c := utility:-next_comb(c,n1);
+        od:# while c
+    od: #for p
+
+        return KK;
+
+$endif #ImplNew
 
      #if isDet then .. to do: iterate over mdegs
 
@@ -488,10 +499,10 @@ uses LinearAlgebra, combinat;
             klast  := KK:-nv + 1;
         fi:
 
-        # left side
+        # right side
         for i from 0 to kfirst by -1 do
             Kv := makeKv(nis,dis,mis,i);
-            if Kv:-S = [] then
+            if ArrayNumElems(Kv) = 0 then
                 kfirst := i+1;
                 break;
             else
@@ -499,34 +510,37 @@ uses LinearAlgebra, combinat;
             fi:
         od;
 
-        # right side
+        # left side
         for i from 1 to klast do
             Kv := makeKv(nis,dis,mis,i);
-            if Kv:-S = [] then
+            if ArrayNumElems(Kv) = 0 then
                 klast:= i-1;
                 break;
             else
                 tmp := tmp, Kv;
             fi;
         od;
-
-        KK:-K := Array(kfirst..klast, [tmp], datatype=WTERM);
+        KK:-K := Array(kfirst..klast, convert([tmp],list));
         return KK;
     end:
     
 ### Make term Kv
     makeKv:= proc(nis::Vector, dis::Matrix, mis::Vector, nu::integer)
-    local b, Kv, n1, p, Kpq, tmp := NULL;
+    local b, Kv, n1, p, Kpq, tmp := NULL, p1;
         n1:=ColumnDimension(dis);
-        
-        Kv:= NewTERM(nu);
-        for p from 0 to n1 do
+
+        Kv:= NewTERM(nu,n1-1);
+        p1:= -1:
+        for p from max(0,nu) to min(n1,n1+nu-1) do
             Kpq := makeKpq(nis,dis,mis,nu,p);
-            if not Kpq:-C = [] then
+            if not Kpq = [] then
                 tmp := tmp, Kpq;
+                if p1=-1 then p1:= p; fi:
             fi;	
         od;
-        Kv:-S := [tmp];
+if p1<>-1 then
+        Kv := Array(p1..p1+nops([tmp])-1, [tmp], datatype=WCOMP);
+fi:
         return Kv;
     end:
     
@@ -537,7 +551,7 @@ uses LinearAlgebra, combinat;
         grps := Dimension(nis);
         q:=p-nu;
         if q<0 or q+1>n1 then 
-            return NewCOMP(p,q);
+            return NewCOMP();
         fi;
         c := utility:-first_comb(n1,p);
         while c<>NULL do
@@ -547,19 +561,8 @@ uses LinearAlgebra, combinat;
             fi:
             c := utility:-next_comb(c,n1);
         od:
-
-#        for c in choose({seq(1..n+1)},p) do # improve ?
-#            mdeg := mis-columnsum(dis,c):
-#            if not isCohZero(nis, mdeg, q) then
-#                tmp := tmp, NewCOH(c, nis, mdeg, grp); #
-#            fi;
-#        od;
-
-#print("NewCOMP(p,q,[tmp])",NewCOMP(p,q,[tmp])); # BUG
-        return NewCOMP(p,q,convert([tmp],list));
-#Kpq:= NewCOMP(p,q); Kpq:-C := [tmp]: Kpq;
+        return NewCOMP(convert([tmp],list));
     end:
-    
     
 ### Print the complex
     printComplex:= proc( KK::WCOMPLEX, plevel::integer := 1)
@@ -568,52 +571,55 @@ uses LinearAlgebra, combinat;
         unassign('K');
         
         if plevel=0 then
-            sum:= 0, "--->";
-            for v from firstTerm(KK) to lastTerm(KK) by -1 do #  ( K_1, K_0, .. )
-                sum:= sum, K[ KK:-K[v]:-v ], "--->";
+            sum:= 0, " ---> ";
+            for v in ListTools:-Reverse(convert(rtable_elems(KK:-K),list)) do
+                sum:= sum, K[ lhs(v) ], "--->";
             od;
             print( sum, 0 );
             return;
         fi:
         
         if plevel=1 then
-            for v from firstTerm(KK) to lastTerm(KK) by -1 do #  ( K_1, K_0, .. )
+            for v in ListTools:-Reverse(convert(rtable_elems(KK:-K),list)) do
                 sum:=0;
-                for p to nops(KK:-K[v]:-S) do # ( K_{1,1} , K_{1,2} , .. )
-                    sum:= sum +  K[ KK:-K[v]:-v, KK:-K[v]:-S[p]:-p ] ;
+                for p in rtable_elems(rhs(v)) do
+                    sum:= sum +  K[lhs(p), 
+                                   lhs(p)  -  lhs(v) ] ;
                 od;
-                print(K[ KK:-K[v]:-v ]= sum  ); # K[ KK:-K[v]:-nu ] = sum
+                print(K[ lhs(v) ]= sum  );
             od;
             return;
         fi:
         
         if plevel=2 then
-            for v from firstTerm(KK) to lastTerm(KK) by -1 do #  ( K_1, K_0, .. )
+
+            for v in ListTools:-Reverse(convert(rtable_elems(KK:-K),list)) do
                 sum:=1;
-                for p to nops(KK:-K[v]:-S) do
-                    for h to nops(KK:-K[v]:-S[p]:-C) do
-                        u:= KK:-K[v]:-S[p]:-C[h]:-mdeg;
-                        sum:= sum* H[ KK:-K[v]:-S[p]:-q ]( seq(u[i], i=1..KK:-ng) )
+                for p in rtable_elems(rhs(v)) do
+                    for h to nops(rhs(p)) do
+                        u:= rhs(p)[h]:-mdeg;
+                         sum:= sum* H[lhs(p)-lhs(v)]( seq(u[i], i=1..KK:-ng) );
                     od;
                 od;
-                print( K[ KK:-K[v]:-v ] = sum );
+                print(K[ lhs(v) ]= sum  );
             od;
             return;
         fi:
         
         if plevel=3 then
             unassign('S');
-            for v from firstTerm(KK) to lastTerm(KK) by -1 do #  ( K_1, K_0, .. )
+            for v in ListTools:-Reverse(convert(rtable_elems(KK:-K),list)) do
                 sum:=1;
-                for p to nops(KK:-K[v]:-S) do
-                    for h to nops(KK:-K[v]:-S[p]:-C) do
-                        u:= copy(KK:-K[v]:-S[p]:-C[h]:-mdeg);
+                for p in rtable_elems(rhs(v)) do # ( K_{1,1} , K_{1,2} , .. )
+                    for h to nops(rhs(p)) do
+                        u:= copy(rhs(p)[h]:-mdeg);
                         for k to KK:-ng do if u[k]<0 then u[k]:=u[k] + KK:-grp[k] + 1; fi; od:
                         # note: degree 0 is not distingushed for primal/dual
                         sum:= sum*S( seq(u[i], i=1..KK:-ng) );
                     od;
                 od;
-                print( K[ KK:-K[v]:-v ]= sum );
+                #if (sum<>1) then print( K[ lhs(v) ]= sum ); fi:
+                print(K[ lhs(v) ]= sum  );
             od;
             return;
         fi:
@@ -626,18 +632,35 @@ uses LinearAlgebra, combinat;
         
 # exterior alg.
         if plevel=5 then
-            for v from firstTerm(KK) to lastTerm(KK) by -1 do #  ( K_1, K_0, .. )
+            for v in ListTools:-Reverse(convert(rtable_elems(KK:-K),list)) do
                 sum:=1;
-                for p to nops(KK:-K[v]:-S) do
-                    for h to nops(KK:-K[v]:-S[p]:-C) do
-                        u:= KK:-K[v]:-S[p]:-C[h]:-mdeg;
-                        sum:= sum* (Lambda^(KK:-K[v]:-S[p]:-C[h]:-fis))[op(KK:-K[v]:-S[p]:-C[h]:-exp)];
+                for p in rtable_elems(rhs(v)) do # ( K_{1,1} , K_{1,2} , .. )
+                    for h to nops(rhs(p)) do
+                        u:= copy(rhs(p)[h]:-mdeg);
+                        for k to KK:-ng do if u[k]<0 then u[k]:=u[k] + KK:-grp[k] + 1; fi; od:
+                        # note: degree 0 is not distingushed for primal/dual
+                        sum:= sum * 
+                         (Lambda^(rhs(p)[h]:-fis))[op(rhs(p)[h]:-exp)];
                     od;
                 od;
-                print( K[ v ] = sum );
+            print( K[ lhs(v) ] = sum );
             od;
             return;
         fi:
+
+        if plevel=6 then
+            print("KK", type(KK,`WCOMPLEX`), KK);
+            for v in ListTools:-Reverse(convert(rtable_elems(KK:-K),list)) do
+               for p in rtable_elems(rhs(v)) do # ( K_{1,1} , K_{1,2} , .. )
+                    print("Kvp", type(rhs(p),`WCOMP`), p);
+                    for h to nops(rhs(p)) do
+                        print("coh", type(rhs(p)[h],`WCOH`), rhs(p)[h]);
+                   od;
+                od;
+            od;
+            return;
+        fi:
+
         ERROR(`Print level can only be 0..5`);
     end:
     
@@ -664,10 +687,7 @@ uses LinearAlgebra, combinat;
         else
             mvec := mis;
         fi:
-        
-        KK := makeComplex(nis, dis, mvec, true):
-        printComplex(KK,1);
-        
+                
         if (ivar=[]) then
             var:= ['x','y','z','u','v','w','s','t'][1..Dimension(nis)];
         else
@@ -675,6 +695,11 @@ uses LinearAlgebra, combinat;
         fi:
         
         sys:= makeSystem(nis, dis, letters, var);
+
+        KK := makeComplex(nis, dis, mvec):
+        printComplex(KK,3);
+        #print(matrixIndex(KK,var) );
+
         if _nresults = 1 or _nresults = undefined then
             return makeMatrix(KK, sys, var);
         else
@@ -684,9 +709,7 @@ uses LinearAlgebra, combinat;
     
 ### The Matrix K_1 -> K_0
     makeMatrix:= proc(KK::WCOMPLEX, sysp:=[], varp:=[])
-    local ddeg, sys, var, n, matr, row, col, rows, cols, d1, d2;
-        
-        n:= KK:-nv;
+    local ddeg, sys, var, matr, row, col, rows, cols, n:= KK:-nv; #, d1, d2;
         
         if varp = [] then
             var:= ['x','y','z','u','v','w','s','t'][1..KK:-ng];
@@ -700,26 +723,27 @@ uses LinearAlgebra, combinat;
         else
             sys:= sysp;
         fi;
-        
         #for now demand det/al complex
-        if not ArrayNumElems(KK:-K)=2 then ERROR(`Not Determinantal`) fi;
+        if not ArrayNumElems(KK:-K,'NonZero')=2 
+        then ERROR(`Not Determinantal`) fi;
         
         #compute block dimensions
-        d1, d2 := blockStructure(KK,1,0);
+        #d1, d2 := blockStructure(KK,1,0);
         #print(d1, d2);
         
         rows:= NULL;
-        for row to nops(KK:-K[1]:-S) do 
+        for row in rtable_elems(KK:-K[1]) do
             cols:= NULL;
-            for col to nops(KK:-K[0]:-S) do
-                ddeg := KK:-K[1]:-S[row]:-q - KK:-K[0]:-S[col]:-q + 1;
-                if ddeg=0 then 
-                    matr:= Matrix( d1[row] , d2[col] , 0, storage=sparse ); #Zero map
+             for col in rtable_elems(KK:-K[0]) do
+                ddeg := lhs(row) - lhs(col);
+                #ddeg := q1 - q0 + 1;
+                if ddeg=0 then
+                    matr:= Matrix( dimension(row), dimension(col), 0, storage=sparse);
                 else if ddeg=1 then
-                         matr:= Sylvmat(KK, 1,row, 0,col, sys, var);
+                         matr:= Sylvmat(KK, 1,lhs(row), 0,lhs(col), sys, var);
                          #print("Sylv", row, col,"-->", Dimension(matr));
-                     else  
-                         matr:= Bezoutmat(KK, 1,row, 0,col, sys, var);
+                     else
+                         matr:= Bezoutmat(KK, 1,lhs(row), 0,lhs(col), sys, var);
                          #print("Bez", row, col,"-->", Dimension(matr));
                      fi;fi;
                 
@@ -735,24 +759,22 @@ uses LinearAlgebra, combinat;
     Sylvmat:= proc(KK::WCOMPLEX, 
                    n1::integer, t1::integer, 
                    n0::integer, t0::integer, f, var)
-    local p::integer, i::integer, r::WCOH, c::WCOH, _u::Vector , _v::Vector, mat::Matrix, cols, rows, grps::integer, k::integer;
+    local i::integer, r::WCOH, c::WCOH, _u::Vector , _v::Vector, mat::Matrix, cols, rows, grps::integer, k::integer;
         
         if ( n1-n0 <> 1) then ERROR(`Terms not consecutive`) fi;
+        if (t1 - t0 <> 1) then ERROR(`Terms not consistent`) fi;
         
         grps := KK:-ng;
-        p:= KK:-K[n1]:-S[t1]:-p;
-        if (p - KK:-K[n0]:-S[t0]:-p <> 1) then ERROR(`Terms not consistent`) fi;
-        
         rows:=NULL;
-        for r in KK:-K[n1]:-S[t1]:-C do
+        for r in KK:-K[n1][t1] do
             cols:=NULL;
             _u:= copy(r:-mdeg);
             for k to grps do if _u[k]<0 then _u[k]:=_u[k] + KK:-grp[k] + 1; fi;od;
-            for c in KK:-K[n0]:-S[t0]:-C do
+            for c in KK:-K[n0][t0] do
                 _v:= copy(c:-mdeg);
                 for k to grps do if _v[k]<0 then _v[k]:=_v[k] + KK:-grp[k] + 1; fi;od;#Dual!
                 if c:-fis subset r:-fis then
-                    i:=1; while i<p and r:-fis[i]=c:-fis[i] do i:=i+1; od; k:=r:-fis[i];
+                    i:=1; while i<t1 and r:-fis[i]=c:-fis[i] do i:=i+1; od; k:=r:-fis[i];
                     mat:= ( ((-1)^(i+1))*multmap(f[k], _u, _v, KK:-grp, var ) );
                 else
                     mat:= Matrix(r:-dim, c:-dim, 0, storage=sparse);
@@ -764,35 +786,34 @@ uses LinearAlgebra, combinat;
         Matrix([rows], storage=sparse);
     end:
     
-### Sylvester Matrix block indexing K_{1,p}->K_{0,p-1}
-    SylvmatIndex:= proc(nis::Vector, dis::Matrix, mis::Vector , varp:=[])
-    local KK, KK0, KK1, grps, i, var, u,  cols, rows, row, r, c, k;
+### Monomials indexing the matrix of K_{1}->K_{0}
+    matrixIndex:= proc(KK::WCOMPLEX, varp:=[])
+    local grps, var, _u, cols, rows, row, r, k;
         
-        #compute the complex
-        KK:=makeComplex(nis,dis,mis);
-        
-        grps := Dimension(nis);
+        grps := KK:-ng;
         
         rows:=NULL;
-        for row from 2 to nops(KK[1][1]) do
-            KK1:= KK[1][1][row];
-            for r from 2 to nops(KK1) do
-                u:= (mis-convert([Vector(grps),seq(Column(dis,i),i=KK1[r][2])],`+` ));
-                for k to grps do if u[k]<0 then u[k]:=u[k]+nis[k]+1; fi;od;
-                rows:= rows, [monbasis(nis,u,varp)];
-                #rows:= rows, monbasis(nis,u,varp);
+        for row in rtable_elems(KK:-K[1]) do
+           for r in rhs(row) do
+             _u:= copy(r:-mdeg);
+              for k to grps do 
+                  if _u[k]<0 then _u[k]:=_u[k] + KK:-grp[k] + 1; fi;
+              od;
+                rows:= rows, [monbasis(KK:-grp,_u,varp)];
             od;
-        od:
+         od:
+
         cols:=NULL;
-        for row from 2 to nops(KK[1][1]) do
-            KK0:= KK[1][2][row];
-            for c from 2 to nops(KK0) do
-                u:= ( mis- convert([Vector(grps),seq(Column(dis,i),i=KK0[c][2])],`+`) );
-                for k to grps do if u[k]<0 then u[k]:=u[k]+nis[k]+1; fi;od;#Dual!
-                cols:= cols, [monbasis(nis,u,varp)];
-                #cols:= cols, monbasis(nis,u,varp);
+        for row in rtable_elems(KK:-K[0]) do
+             for r in rhs(row) do
+             _u:= copy(r:-mdeg);
+              for k to grps do 
+                  if _u[k]<0 then _u[k]:=_u[k] + KK:-grp[k] + 1; fi;
+              od;
+                cols:= cols, [monbasis(KK:-grp,_u,varp)];
             od;
-        od:
+         od:
+
         [rows],[cols];
     end:
     
@@ -849,7 +870,6 @@ uses LinearAlgebra, combinat;
             lm := lm, lstmonof123m;
             r := expand(r-c*lstmonof123m);
         od;
-        lm;
 #op(sort([lm], proc (a, b) options operator,
 # arrow;Groebner:-TestOrder(a, b, grlex(op(var))) end proc));
 #op(sort([lm], proc (a, b) options operator, arrow;Groebner:-TestOrder(a, b, tdeg(op(ListTools:-Reverse(var)))) end proc));
@@ -897,8 +917,6 @@ uses LinearAlgebra, combinat;
         s:=[monbasis(nis, di, var)];
         unassign('c');
         for i from 1 to nops(s) do
-#        p:= p + c[i-1] * s[i];
-# TP-indexing:
             p:= p + c[degree(s[i],vars[1]),degree(s[i],vars[2])] * s[i];
         od;
         p;
@@ -919,7 +937,6 @@ uses LinearAlgebra, combinat;
         v:= [lstmonof(evalm(p),vars)];
         p:=0;
         for i from 1 to nops(v) do
-            #p:= p+ c[i-1]*v[i];
             p:= p + c[degree(v[i],vars[1]),degree(v[i],vars[2])] * v[i];
         od;
         p;
@@ -960,6 +977,8 @@ uses LinearAlgebra, combinat;
     option inline;
         convert([Vector(RowDimension(dis)),seq(dis[..,i],i=c)],`+`)
         # Maple>13: add(dis[..,i],i=c)
+        
+        # for i in c do..
     end:
     
     sortPerm := proc(data)
@@ -967,8 +986,8 @@ uses LinearAlgebra, combinat;
         sort(ind, proc(a,b) data[a]<data[b] end);
     end:
     
-    is_determ := proc(nis::Vector,dis::Matrix,mis::Vector)
-    local n1, grps, i, p, q, c: # A::table
+    isDeterminantal := proc(nis::Vector,dis::Matrix,mis::Vector)
+    local n1, grps, i, p, q, c:
         grps:=Dimension(nis):
         unassign('i');
         n1:=ColumnDimension(dis):
@@ -986,7 +1005,7 @@ uses LinearAlgebra, combinat;
         od:
 
         RETURN(true);
-    end:	# is_determ
+    end: # isDeterminantal
         
     degreeBounds := proc(nis::Vector,dis::Matrix)
     local grps, low, upp, i;
@@ -994,14 +1013,13 @@ uses LinearAlgebra, combinat;
         
         low := Vector(grps);
         for i from 1 to grps do
-            #low[i]:=  min(-max(dis[i,..]),-nis[i]);
             low[i]:=  max(-max(dis[i,..]),-nis[i]);
         od:
         unassign('i');
         
         upp := Vector(grps);
         for i from 1 to grps do
-            upp[i]:= convert(dis[i,..], `+`) - 1 + min( max(dis[i,..])-nis[i], 0);
+            upp[i]:= convert(dis[i,..],`+`) - 1 + min( max(dis[i,..])-nis[i], 0);
         od;
         #print("Bounds:",low, upp);
         low,upp;    
@@ -1025,44 +1043,42 @@ uses LinearAlgebra, combinat;
         #print("vec:", 2^(ColumnDimension(dis)),
         #"cand:", mul(upp[i]-low[i]+1, i=1..Dimension(low)) );
 
-if true then
+$define Impl1 1
+$ifdef Impl1
 # Implementation 1
-        ind := Array(1..utility:-num_points(low,upp), 
-                     fill=true, datatype=boolean):
-        for p from 0 to n1 do
-            c := utility:-first_comb(n1,p);
-            while c<>NULL do
-                
-                mmd := columnsum(dis,c):
-                
-                cand:= utility:-first_point(low,upp); cnt:=1:
-                while cand <> NULL do
-                    if ind[cnt]=true then
-                        q:= getTerm(nis, cand, mmd);
-                        if q<>-1 and p <> q and p <> q+1 then 
-                            ind[cnt]:=false; 
-                        fi:
+    ind := Array(1..utility:-num_points(low,upp), 
+                 fill=true, datatype=boolean):
+    for p from 0 to n1 do
+        c := utility:-first_comb(n1,p);
+        while c<>NULL do
+            mmd := columnsum(dis,c):
+            
+            cand:= utility:-first_point(low,upp); cnt:=1:
+            do
+                if ind[cnt]=true then
+                    q:= getTerm(nis, cand, mmd);
+                    if q<>-1 and p <> q and p <> q+1 then 
+                        ind[cnt]:=false; 
                     fi:
-                    cand := utility:-next_point(cand,low,upp); cnt := cnt+1:
-                od: #while cand
-                 c := utility:-next_comb(c,n1);
-            od:# while c
-        od: #for p
-
-        cand:= utility:-first_point(low,upp);
-        cnt:=1:
-        while cand <> NULL do
-            if ind[cnt]=true then
-                result := result, cand;
-            fi:
-            cand := utility:-next_point(cand,low,upp); cnt := cnt+1:
-        od:
-        
-else
+                fi:
+                if not utility:-next_point(cand,low,upp) then break; fi: cnt := cnt+1:
+            od: #while cand
+            c := utility:-next_comb(c,n1);
+        od:# while c
+    od: #for p
+    
+    cand:= utility:-first_point(low,upp);
+    cnt:=1:
+     do
+        if ind[cnt]=true then result := result, Copy(cand); fi:
+        if not utility:-next_point(cand,low,upp) then break; fi: cnt := cnt+1:
+    od:
+    
+$else
         
 # Implementation 2
         cand:= utility:-first_point(low,upp);
-        while cand <> NULL do
+        do
             # necessary condition
             #  msmall := false; mbig:=false;
             # for i from 1 to grps do
@@ -1073,14 +1089,14 @@ else
             # od:#i
             
             if #msmall and mbig and
-            is_determ(nis,dis,cand) then
+            isDeterminantal(nis,dis,cand) then
                 #print("found",cand);
-                result:= result, cand;
+                result:= result, Copy(cand);
             fi;
-            cand := utility:-next_point(cand,low,upp);
+            if not utility:-next_point(cand,low,upp) then break; fi:
         od;
 
-fi: # impl
+$endif # impl
         
         if _nresults = 1 or _nresults = undefined then
              return [result];
@@ -1106,16 +1122,16 @@ fi: # impl
         
         #compute block dimensions
         d1:=NULL;
-        for row in KK:-K[n1]:-S do 
-            d1:= d1, dimension(row);
+        for row in rtable_elems(KK:-K[n1]) do
+            d1:= d1, dimension(rhs(row));
         od; 
         
         d2:=NULL;
-        for col in KK:-K[n0]:-S do
-            d2:= d2, dimension(col);
+        for col in rtable_elems(KK:-K[n0]) do
+            d2:= d2, dimension(rhs(col));
         od;
         
-#Matrix(nops(d1), nops(d2), (i,j)-> [d1[i],d2[j]] );
+        #Matrix(nops(d1), nops(d2), (i,j)-> [d1[i],d2[j]] );
         [d1], [d2];
     end:#blockStructure
     
@@ -1132,7 +1148,7 @@ fi: # impl
         for i from 1 to N do mtr[i,1] := lp[i] od;
         
         for j from 2 to N do
-#print( cat(_,vx[j-1]) );
+        #print( cat(_,vx[j-1]) );
             for i from 1 to N do
                 mtr[i,j]:= subs(vx[j-1]= cat(_,vx[j-1]) ,mtr[i,j-1]); ## vy[j-1]
             od;
@@ -1167,7 +1183,6 @@ fi: # impl
         
         nvar:=NULL; ovar:=NULL;
         for i to nops(var) do
-#  for i from nops(var) to 1 by -1 do
             if member(i,grp) then
                 nvar:= nvar,cat(_,var[i]);
                 ovar:= ovar, var[i];
@@ -1185,8 +1200,8 @@ fi: # impl
         
 #  print( collect(Bpol, [op(ovars),op(nvars)], distributed) );
         
-        row:= [monbasis(nis,sp1, nvar)];
-        col:= [monbasis(nis,sp2, ovar)];
+        row:= [monbasis(nis,sp1, ovar)];
+        col:= [monbasis(nis,sp2, nvar)];
         
 #  print(Sdim(nis,sp1),Sdim(nis,sp2));
 #  print(nops(row), nops(col));
@@ -1211,25 +1226,22 @@ fi: # impl
                      n1::integer, t1::integer, 
                      n0::integer, t0::integer, f, var)
         
-    local p, pols, subsvar, n,grps, r,c, rows, cols, _u, _v, k, mat;
-        
-        if ( n1-n0 <> 1) then ERROR(`Terms not consecutive`) fi;
-        
+    local pols, subsvar, n,grps, r,c, rows, cols, _u, _v, k, mat;
+
         n:= KK:-nv;
         grps := KK:-ng;
-        p:= KK:-K[n1]:-S[t1]:-p;
-        if (p - KK:-K[n0]:-S[t0]:-p <> n+1) then ERROR(`Terms not consistent`) fi;
+        
+        if ( n1-n0 <> 1) then ERROR(`Terms not consecutive`) fi;
+        if (t1 - t0 <> n+1) then ERROR(`Terms not consistent`) fi;
         
         rows:=NULL;
-        for r in KK:-K[n1]:-S[t1]:-C do
+        for r in KK:-K[n1][t1] do
             cols:=NULL;
             _u:= copy(r:-mdeg);
             for k to grps do if _u[k]<0 then _u[k]:=-_u[k] - KK:-grp[k] - 1; fi;od;
-#     for k to grps do if _u[k]<0 then _u[k]:=_u[k] + KK:-grp[k] + 1; fi;od;
-            for c in KK:-K[n0]:-S[t0]:-C do
+            for c in KK:-K[n0][t0] do
                 _v:= copy(c:-mdeg);
                 for k to grps do if _v[k]<0 then _v[k]:=-_v[k] - KK:-grp[k] - 1; fi;od;
-#        for k to grps do if _v[k]<0 then _v[k]:=_v[k] + KK:-grp[k] + 1; fi;od;
                 if c:-fis subset r:-fis then
                     pols:= r:-fis minus c:-fis;
                     subsvar:= r:-exp minus c:-exp; # partial Bezoutian

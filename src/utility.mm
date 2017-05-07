@@ -42,7 +42,8 @@ ifirst_point,
 inext_point,
 mfirst_mon,
 mnext_mon,
-mnum_mon;
+mnum_mon
+;
 
 #
 # Next r-combination of [1..n] after c in lex-order
@@ -229,7 +230,7 @@ end:
 #
 first_point:= proc(low::Or(list,Vector),upp::Or(list,Vector))
 option inline;
-    low;
+    copy(low);
 end:
 
 #
@@ -245,20 +246,21 @@ end:
 # equiv: lex-next point in the cartesian product [low[1],upp[1]]x..x[low[n],upp[n]]
 #
 next_point:=proc(p::Or(list,Vector),low::Or(list,Vector),upp::Or(list,Vector))
-local np::Vector, i, n;
+local np, i, n;
 
     # = on vectors bug Maple 13
-    if LinearAlgebra:-Equal(p,upp) then return NULL; fi; #finished
-    np:=copy(p);#bug Maple 13: p passed by reference, terminating value..
+    if LinearAlgebra:-Equal(p,upp) then return false; fi; #finished
+#    np:= copy(p);#bug Maple 13: p passed by reference, terminating value..
     n := LinearAlgebra:-Dimension(p);#nops(p);
 
     i:=n;
     while p[i]=upp[i] do i:=i-1; od;
-    np[i]:=p[i]+1;
+    p[i]:= p[i]+1;
 
     i:=i+1;
-    while i<=n do np[i]:=low[i]; i:=i+1; od;
-np;
+    while i<=n do p[i]:=low[i]; i:=i+1; od;
+#np;
+return true;
 end:
 
 #################################################################

@@ -44,16 +44,14 @@ ModuleLoad:= proc()
 
     # Weyman component type K_{p,q}, v=p-q
     #
-    # p::integer
-    # q::integer
-    # C::list(WCOH)
-    TypeTools[AddType]( WCOMP, 'record(p::integer, q::integer, C::list(WCOH))' ); # is "exp" constant?
+    # list(WCOH)
+    TypeTools[AddType]( WCOMP, 'list(WCOH)' );
+    # is "exp" constant?
 
     # Weyman term type K_v
     #
-    # nu::integer
-    # S::list(WCOMP)
-    TypeTools[AddType]( WTERM, 'record(v::integer,S::list(WCOMP))' );
+    # Array(WCOMP) indexed by p = 0..n+1
+    TypeTools[AddType]( WTERM, 'Array(WCOMP)' );
 
     # Weyman complex type K_{*}
     #
@@ -62,8 +60,8 @@ ModuleLoad:= proc()
     # grp::Vector
     # deg::Matrix
     # mvc::Vector
-    # K::Array(WTERM)
-    TypeTools[AddType]( WCOMPLEX, 'record(nv::integer, ng::integer, grp::Vector,deg::Matrix,mvc::Vector, K::Array(WTERM))' );
+    # K::Array(WTERM) indexed by v = -n..n+1
+    TypeTools[AddType]( WCOMPLEX, 'record(nv::integer, ng::integer, grp::Vector,deg::Matrix,mvc::Vector, K::Array )'); # ::Array(WTERM)
     
 lprint(`Polyonimo Maple Modules, Angelos Mantzaflaris, 2017`);
 end:
