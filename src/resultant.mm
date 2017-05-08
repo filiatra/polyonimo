@@ -108,7 +108,7 @@ uses LinearAlgebra, combinat;
     
 # K_{v}
     NewTERM := proc(_v::integer, _n::integer)
-        return Array(max(0,_v)..min(_n+1,_n+_v));
+        return Array(max(0,_v)..min(_n+1,_n+_v), datatype=Or(`WCOMP`,integer));
     end:
     
 # K_{p,q}, v=p-q
@@ -134,7 +134,7 @@ uses LinearAlgebra, combinat;
 # Dimension of complex terms
     wcDimension := overload(
         [
-            proc(a::WTERM) option overload; # not resolved !
+            proc(a::WTERM) option overload;
             local v, res := 0;
                 for v in rtable_elems(a) do
                     res := res + wcDimension(rhs(v));
