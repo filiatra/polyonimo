@@ -51,7 +51,7 @@ ModuleLoad:= proc()
     # Weyman term type K_v
     #
     # Array(WCOMP) indexed by p = 0..n+1
-    TypeTools[AddType]( WTERM, 'Array(WCOMP)' );
+    TypeTools[AddType]( WTERM, 'Array()' ); # Array(WCOMP) does not resolve
 
     # Weyman complex type K_{*}
     #
