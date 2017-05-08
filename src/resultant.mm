@@ -262,7 +262,7 @@ uses LinearAlgebra, combinat;
         r;
     end:
     
-# Macaulay's matrix degree vector
+# Macaulays matrix degree vector
     macVect:= proc(nis::Vector, dis::Matrix)
     local grps,n,s;
         grps := Dimension(nis);
@@ -682,7 +682,7 @@ fi:
                 return Matrix();
             else
                 mvec := vv[-1];
-                lprint(`Degree vector `, convert(mvec,list), `Dimension`, vd[-1] );
+                lprint("Degree vector",convert(mvec,list),"Dimension",vd[-1] );
             fi:
         else
             mvec := mis;
@@ -830,6 +830,7 @@ fi:
         for i to nops(row) do
             for j to nops(col) do
                 mat[i,j] := coeffof(expand(col[j]/row[i]), f , vars );
+                #print(i,j,"mon:", expand(col[j]/row[i]) , " gets:", mat[i,j]);
             od;
         od;
         #print(mat);
@@ -841,7 +842,7 @@ fi:
     coeffof := proc(m, p, var)
     local lm, mlist, k;
         mlist := [coeffs(p,var,'lm')];
-        if member(m,{lm},'k') then return mlist[k]; else return 0; fi;
+        if member(m,[lm],'k') then return mlist[k]; else return 0; fi;
     end:
     
 # todo
