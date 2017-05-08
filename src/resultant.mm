@@ -33,6 +33,7 @@ export
 # Complex and matrix computation based on degree vector
     makeComplex,
     printComplex,
+    wcDimension,
     makeMatrix,
     matrixIndex,
 # Utility
@@ -56,7 +57,9 @@ local
     biVarSylvVect,
     bilinearSylvVect,
 # Polynomial manipulation
-    coeffof,
+    coeffOf,
+    getCoeff,
+    listTerms,
     lstmonof,
     multmap,
     monbasis,
@@ -129,12 +132,12 @@ uses LinearAlgebra, combinat;
     end:
         
 # Dimension of complex terms
-    dimension := overload(
+    wcDimension := overload(
         [
-            proc(a::WTERM) option overload;
+            proc(a::WTERM) option overload; # not resolved !
             local v, res := 0;
-                for v in a:-S do
-                    res := res + dimension(v);
+                for v in rtable_elems(a) do
+                    res := res + wcDimension(rhs(v));
                 od:
                 return res;
             end,
@@ -738,7 +741,7 @@ fi:
                 ddeg := lhs(row) - lhs(col);
                 #ddeg := q1 - q0 + 1;
                 if ddeg=0 then
-                    matr:= Matrix( dimension(row), dimension(col), 0, storage=sparse);
+                    matr:= Matrix( wcDimension(row), wcDimension(col), 0, storage=sparse);
                 else if ddeg=1 then
                          matr:= Sylvmat(KK, 1,lhs(row), 0,lhs(col), sys, var);
                          #print("Sylv", row, col,"-->", Dimension(matr));
@@ -819,36 +822,44 @@ fi:
     
 ### Matrix of multihomogeneous multiplication map
     multmap:= proc(f, sp1::Vector, sp2::Vector, nis::Vector, var::list)
-    local i,j,row,col, vars, mat;
+    local i,j, row, col, vars, _c, _m, mat;
         
         row := [monbasis(nis,sp1,var)];
         col := [monbasis(nis,sp2,var)];    
         vars:= allvars(nis,var); 
         #print(row,col);
-        
+
+        _c, _m := listTerms(f, vars);
+
         mat := Matrix(nops(row), nops(col), storage=sparse);
         for i to nops(row) do
             for j to nops(col) do
-                mat[i,j] := coeffof(expand(col[j]/row[i]), f , vars );
+                mat[i,j] := getCoeff(expand(col[j]/row[i]), _c, _m );
                 #print(i,j,"mon:", expand(col[j]/row[i]) , " gets:", mat[i,j]);
             od;
         od;
-        #print(mat);
         return mat;
 #todo: return row,col ? _nresults
     end:
     
 ###return the coeff. of p in variables var of the monomial m:
-    coeffof := proc(m, p, var)
-    local lm, mlist, k;
-        mlist := [coeffs(p,var,'lm')];
-        if member(m,[lm],'k') then return mlist[k]; else return 0; fi;
+    coeffOf := proc(m, p, var)
+    local _m_list, _c_list, k;
+        _m_list, _c_list := listTerms(p, vars);
+        getCoeff(m, _m_list, _c_list);
     end:
-    
-# todo
-# coeffof := proc(m,mlist)
-    
-    
+
+listTerms := proc(p, var::list)
+    local _m_list, _c_list;
+    _c_list := [coeffs(p,var,'_m_list')];
+    _c_list, [_m_list];
+end:
+
+getCoeff := proc(_mon, _c_list::list, _m_list::list)
+   local k;
+   if member(_mon,_m_list,'k') then return _c_list[k]; else return 0; fi;
+end:
+
 #all variables, var the vector of group names, for example bihomo: [x,y]
     allvars:= proc(nis::Vector,var)
     local i,vars;
@@ -1124,12 +1135,12 @@ $endif # impl
         #compute block dimensions
         d1:=NULL;
         for row in rtable_elems(KK:-K[n1]) do
-            d1:= d1, dimension(rhs(row));
+            d1:= d1, wcDimension(rhs(row));
         od; 
         
         d2:=NULL;
         for col in rtable_elems(KK:-K[n0]) do
-            d2:= d2, dimension(rhs(col));
+            d2:= d2, wcDimension(rhs(col));
         od;
         
         #Matrix(nops(d1), nops(d2), (i,j)-> [d1[i],d2[j]] );
@@ -1178,7 +1189,7 @@ $endif # impl
     
 ### Bezoutian block of S(sp1)->S(sp2)
     BezoutianPoly:= proc(f,sp1::Vector,sp2::Vector,nis::Vector,var, grp:={} )
-    local i,j,row,col, nvar, nvars, ovar, ovars, Bpol, mat;
+    local _c, _m, i,j,row,col, nvar, nvars, ovar, ovars, Bpol, mat;
         
         if grp={} then grp:={seq(1..nops(var))} fi;
         
@@ -1209,10 +1220,11 @@ $endif # impl
 #  print(sp1, row," ** ", sp2, col);
         
         nvars:= [op(allvars(nis,var)),op(nvars)];
+        _c, _m := listTerms(Bpol, nvars);
         mat:= NULL;
         for i to nops(row) do
             for j to nops(col) do
-                mat := mat, coeffof(expand(col[j]*row[i]), Bpol , nvars );
+                mat := mat, getCoeff(expand(col[j]*row[i]), _c, _m ); 
             od;
         od;
         Matrix(nops(row),nops(col),[mat]);
