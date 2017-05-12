@@ -28,8 +28,6 @@ $include "src/resultant.mm"
 
 $include "src/benchmark.mm"
 
-$include "src/devel.mm"
-
 ModuleLoad:= proc()
 
     # Weyman cohomology group type
@@ -72,3 +70,6 @@ end:
 ModuleLoad();
 
 end:#end polyonimo
+
+# Codes under development
+$include "src/devel.mm"

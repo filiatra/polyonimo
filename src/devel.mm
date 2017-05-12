@@ -1,7 +1,7 @@
 ##########################################################################
 ##########################################################################
 ##                                                                      ##
-##  polyonimo:-devel                                                    ##
+##  polyonimo/devel                                                     ##
 ##                                                                      ##
 ##  This Source Code Form is subject to the terms of the Mozilla Public ##
 ##  License, v. 2.0. If a copy of the MPL was not distributed with this ##
@@ -12,20 +12,11 @@
 ##########################################################################
 ##########################################################################
 
-devel := module()
-
-description "Polyonimo development package";
-option package;
-local isWcomplex;
-
-
-isWcomplex := proc(kk:=anything)
-
-return false;
-end:
-
 #TypeTools:-AddType(wcomplex, isWcomplex);
 
 
+use LinearAlgebra, polyonimo, polyonimo[utility] in
 
-end:#end polyonimo-devel
+
+
+end:#use
