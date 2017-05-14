@@ -745,23 +745,23 @@ uses LinearAlgebra, combinat;
     end:
     
 ###return the coeff. of p in variables var of the monomial m:
-    coeffOf := proc(m, p, var) # p::polynom(anything,var)
+    coeffOf := proc(m, p, vars) # p::polynom(anything,var)
     local _m_list, _c_list, k;
         _m_list, _c_list := listTerms(p, vars);
         getCoeff(m, _m_list, _c_list);
     end:
 
-listTerms := proc(p, var::list)
+    listTerms := proc(p, vars::list)
     local _m_list, _c_list;
-    _c_list := [coeffs(p,var,'_m_list')];
-    _c_list, [_m_list];
-end:
+        _c_list := [coeffs(p,vars,'_m_list')];
+        _c_list, [_m_list];
+    end:
 
-getCoeff := proc(_mon, _c_list::list, _m_list::list)
-   local k;
-   if member(_mon,_m_list,'k') then return _c_list[k]; else return 0; fi;
-end:
-
+    getCoeff := proc(_mon, _c_list::list, _m_list::list)
+    local k;
+        if member(_mon,_m_list,'k') then return _c_list[k]; else return 0; fi;
+    end:
+    
 #all variables, var the vector of group names, for example bihomo: [x,y]
     allvars:= proc(nis::Vector, var::list)
     local i,vars;
@@ -1055,9 +1055,9 @@ $endif # impl
     end:#blockStructure
     
     
-# Determinant of the discrete Jacobian wrt 
+# Determinant of the discrete Jacobian
     Jdiscr := proc(lp::list, vx::list) #vy::list
-    local N,i,j,k,vxi,s, mtr0, mtr;
+    local N, i, j, mtr0, mtr;
         
         N := nops(lp);
         if nops(vx) <> N-1 then print(nops(lp), vx );
@@ -1081,21 +1081,32 @@ $endif # impl
                                              /(cat(_,vx[j-1]) - vx[j-1])) ));
             od;
         od;
+        #print("final:", mtr);
+
         Determinant(mtr);
     end:
     
-getPerm := proc(mm::Vector, deg::Matrix, grps::set)
-    local i, k, n:=Dimension(mm), s:=Vector([seq(1..n)]);
+    getPerm := proc(mm::Vector, deg::Matrix, grps::set)
+    local tmp, i, k, n:=Dimension(mm),
+        s:=Vector([seq(1..n)]);
 
     for k in grps do
         for i in grps do
-            if mm[k]+1 = add(deg[k,j],j=1..i) then s[k]:=i; fi:
-        od: 
+            if  mm[k]+1 = add(deg[k,j],j=1..i) then
+                s[k]:= i;
+            fi:
+        od:
     od:
 
-    if convert(s,set)<>{seq(1..n)} then ERROR("Perm:",convert(s,list)) fi:
+    if convert(s,set)<>{seq(1..n)} then 
+        #ERROR("Perm:",convert(s,list));
+        WARNING("Perm. problem");
+        print(convert(s,list));
+        #s:=Vector([seq(1..n)]);        # 15/3 
+        s:=Vector([seq(n-k,k=0..n-1)]); # 17/1
+    fi:
     s;
-end:
+    end:
 
 ### Bezoutian block of S(sp1)->S(sp2)
     BezoutianPoly:= proc(f,sp1::Vector,sp2::Vector,nis::Vector,
@@ -1122,8 +1133,10 @@ end:
 
         _c:= convert(getPerm(sp2,dis, grp),list):
         Bpol:= Jdiscr(f, allvars(nis[_c], ovar[_c]) );
-        #print("Bez", Bpol, convert(getPerm(sp2,dis, grp),list) );
-        
+
+        #print("Bez", collect(Bpol, [op(ovars),op(nvars)], distributed) );
+        #print("Bez deg", seq(degree(Bpol, ovars[k]),k=1..nops(ovars)), "_", seq(degree(Bpol, nvars[k]),k=1..nops(nvars))  );
+
         row:= [monbasis(nis,sp1, nvar)];
         col:= [monbasis(nis,sp2, var )];
         #print(sp1, row, sp2, col);
@@ -1133,7 +1146,7 @@ end:
         mat := Matrix(nops(row),nops(col));
         for i to nops(row) do
             for j to nops(col) do
-                mat[i,j] := getCoeff(expand(col[j]*row[i]), _c, _m );
+                mat[i,j] := getCoeff(expand(col[j]/row[i]), _c, _m );
             od;
         od;
         mat;
@@ -1160,15 +1173,14 @@ end:
         for r in KK:-K[n1][t1] do
             cols:=NULL;
             _u:= copy(r:-mdeg);
-            for k to grps do if _u[k]<0 then _u[k]:=-_u[k] - KK:-grp[k] - 1; fi;od;
+            for k to grps do if _u[k]<0 then _u[k]:=_u[k] + KK:-grp[k] + 1; fi;od;
             for c in KK:-K[n0][t0] do
                 _v:= copy(c:-mdeg);
-                for k to grps do if _v[k]<0 then _v[k]:=-_v[k] - KK:-grp[k] - 1; fi;od;
+                for k to grps do if _v[k]<0 then _v[k]:=_v[k] + KK:-grp[k] + 1; fi;od;
                 if c:-fis subset r:-fis then
                     pols:= r:-fis minus c:-fis;
                     subsvar:= r:-exp minus c:-exp; # partial Bezoutian
                     mat:= BezoutianPoly( [seq(f[k],k=pols)] ,_u, _v, KK:-grp, KK:-deg, var, subsvar );
-                    #print("Bmat:", mat);
                 else
                     mat:= Matrix(r:-dim, c:-dim, 0, storage=sparse);
                 fi;

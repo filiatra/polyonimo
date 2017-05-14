@@ -25,6 +25,7 @@ next_comb,
 num_perm,
 first_perm,
 next_perm,
+perm_sign,
 multichoose,
 first_mon,
 next_mon,
@@ -128,6 +129,22 @@ end:
 first_perm:= proc(n::integer)
    return [seq(1..n)];
 end:
+
+#
+# Returns the sign (parity) of the permutation
+#
+perm_sign := proc(c::list)
+local s:=1, i, j, n:=nops(c);
+    #if nops(convert(c,set))=n then
+    for i to n-1 do
+        for j from i+1 to n do
+            if c[i]>c[j] then s:=-s; fi;
+        od;
+    od;
+    #else print(`Invalid input`); fi;
+    s;
+end:
+
 
 #
 # Number of r-combination of [1..n]
