@@ -38,6 +38,7 @@ export
     matrixIndex,
 # Utility
     critVect,
+    vec_koszul2,
     mDegree;
     
 local 
@@ -51,7 +52,6 @@ local
 # Specific resultant formulas
     macVect,
     unmixedSylvVect,
-    biVarSylvVect,
     bilinearSylvVect,
 # Polynomial manipulation
     coeffOf,
@@ -78,6 +78,7 @@ local
     solveMatrixKernel,
 # Matrix generator helpers
     Sylvmat,
+    toDegreeVector,
     degreeBounds,
     Jdiscr,
     getPerm,
@@ -288,7 +289,7 @@ uses LinearAlgebra, combinat;
     
     
 # Degree vector for bivariate Koszul matrix
-    biVarSylvVect:= proc(nis::Vector, dis::Matrix, ind::integer:=1)
+    vec_koszul2:= proc(nis::Vector, dis::Matrix, ind::integer:=1)
         if ind=1 then
             RETURN(Vector([add(deg[1,i],i=1..n+1)-1, -1 ]) );
         fi:
@@ -643,8 +644,8 @@ uses LinearAlgebra, combinat;
             cols:= NULL;
              for col in rtable_elems(KK:-K[v0]) do
                 ddeg := lhs(row) - lhs(col); # p1-p0 = q1 - q0 + 1
-                if ddeg=0 then
-                    matr:= Matrix( wcDimension(row), wcDimension(col), 0, storage=sparse);
+                if ddeg<=0 then
+                    matr:= Matrix( wcDimension(rhs(row)), wcDimension(rhs(col)), 0, storage=sparse);
                 else if ddeg=1 then
                          matr:= Sylvmat(KK, v1,lhs(row), v0,lhs(col), sys, var);
                          #print("Sylv", row, col,"-->", Dimension(matr));
@@ -673,11 +674,9 @@ uses LinearAlgebra, combinat;
         rows:=NULL;
         for r in KK:-K[n1][t1] do
             cols:=NULL;
-            _u:= copy(r:-mdeg);
-            for k to grps do if _u[k]<0 then _u[k]:=_u[k] + KK:-grp[k] + 1; fi;od;
+            _u:= toDegreeVector(r:-mdeg, KK:-grp);
             for c in KK:-K[n0][t0] do
-                _v:= copy(c:-mdeg);
-                for k to grps do if _v[k]<0 then _v[k]:=_v[k] + KK:-grp[k] + 1; fi;od;#Dual!
+                _v:= toDegreeVector(c:-mdeg, KK:-grp);
                 if c:-fis subset r:-fis then
                     i:=1; while i<t1 and r:-fis[i]=c:-fis[i] do i:=i+1; od; k:=r:-fis[i];
                     mat:= ( ((-1)^(i+1))*multmap(f[k], _u, _v, KK:-grp, var ) );
@@ -700,21 +699,15 @@ uses LinearAlgebra, combinat;
         rows:=NULL;
         for row in rtable_elems(KK:-K[v1]) do
            for r in rhs(row) do
-             _u:= copy(r:-mdeg);
-              for k to grps do 
-                  if _u[k]<0 then _u[k]:=_u[k] + KK:-grp[k] + 1; fi;
-              od;
-                rows:= rows, [monbasis(KK:-grp,_u,varp)];
+               _u:= toDegreeVector(r:-mdeg, KK:-grp);
+               rows:= rows, [monbasis(KK:-grp,_u,varp)];
             od;
          od:
 
         cols:=NULL;
         for row in rtable_elems(KK:-K[v0]) do
              for r in rhs(row) do
-             _u:= copy(r:-mdeg);
-              for k to grps do 
-                  if _u[k]<0 then _u[k]:=_u[k] + KK:-grp[k] + 1; fi;
-              od;
+            _u:= toDegreeVector(r:-mdeg, KK:-grp);
                 cols:= cols, [monbasis(KK:-grp,_u,varp)];
             od;
          od:
@@ -743,6 +736,10 @@ uses LinearAlgebra, combinat;
         return mat;
 #todo: return row,col ? _nresults
     end:
+        
+#########################################################################
+# Polynomials
+#########################################################################
     
 ###return the coeff. of p in variables var of the monomial m:
     coeffOf := proc(m, p, vars) # p::polynom(anything,var)
@@ -815,11 +812,7 @@ uses LinearAlgebra, combinat;
         od;
         lstmonof(expand(p),[vars]);
     end:
-    
-#########################################################################
-# Polynomials
-#########################################################################
-    
+
 ### Make polynomial with m-degree di
     makePoly:= proc(nis::Vector,di::Vector, c, var )
     local vars, p, i, s;
@@ -1089,57 +1082,83 @@ $endif # impl
     getPerm := proc(mm::Vector, deg::Matrix, grps::set)
     local tmp, i, k, n:=Dimension(mm),
         s:=Vector([seq(1..n)]);
+        #s:=Vector([seq(n-k,k=0..n-1)]);
 
     for k in grps do
         for i in grps do
             if  mm[k]+1 = add(deg[k,j],j=1..i) then
                 s[k]:= i;
+print("s=",convert(s,list), "due to ", "k=",k,"i=", i);
             fi:
         od:
     od:
-
+#print("perm=",convert(s,list));
+        
     if convert(s,set)<>{seq(1..n)} then 
         #ERROR("Perm:",convert(s,list));
         WARNING("Perm. problem");
         print(convert(s,list));
         #s:=Vector([seq(1..n)]);        # 15/3 
         s:=Vector([seq(n-k,k=0..n-1)]); # 17/1
+        print("fix to", convert(s,list));
     fi:
-    s;
+        s;
+    end:
+    
+    toDegreeVector := proc(_u::Vector, nis::Vector)
+    local k, dvec::Vector := Vector(Dimension(nis));
+        for k to Dimension(nis) do 
+            dvec[k] := `if`(_u[k]<0, _u[k] + nis[k] + 1, _u[k]);
+        od;
+            dvec;
     end:
 
 ### Bezoutian block of S(sp1)->S(sp2)
-    BezoutianPoly:= proc(f,sp1::Vector,sp2::Vector,nis::Vector,
-                         dis::Matrix, var, grp:={} )
-    local _c, _m, i,j,row,col, nvar, nvars, ovar, ovars, Bpol, mat;
+    BezoutianPoly:= proc(f,hp1::Vector,hp2::Vector,nis::Vector,
+                         dis::Matrix, var::list, grp::set:={2017} )
+    local _c, _m, i,j,row,col, nvar, nvars, ovar, ovars, Bpol, mat, sp1, sp2,
+        cvar, cvars;
+        sp1:= toDegreeVector(hp1, nis);
+        sp2:= toDegreeVector(hp2, nis);
+        if grp={2017} then grp:={seq(1..nops(var))} fi;
         
-        if grp={} then grp:={seq(1..nops(var))} fi;
+        # should be the same as below ?
+#print("deg",hp1,hp2);
+#        nvar:=NULL:
+#        for i to nops(var) do
+#        nvar:= nvar,`if`(hp1[i]<0,cat(_,var[i]),var[i]);
+#        od:
+#        print("negs",nvar,grp);
 
-        nvar:=NULL; ovar:=NULL;
+        nvar:=NULL; ovar:=NULL; cvar:=NULL; #todo nvar --> rvar ? or introduce new
         for i to nops(var) do
+
+            cvar:= cvar, `if`(hp2[i]<0,cat(_,var[i]),var[i]); #var[i];                
+
             if member(i,grp) then
                 nvar:= nvar,cat(_,var[i]);
-                ovar:= ovar, var[i];
+                ovar:= ovar, var[i]; #`if`(hp2[i]<0,cat(_,var[i]),var[i]); #var[i];
             else
-                nvar:= nvar, var[i];
+                nvar:= nvar, `if`(hp1[i]<0,cat(_,var[i]),var[i]); # var[i];
                 ovar:= ovar, 0;
             fi;
         od;
-
-        nvar  := [nvar]; ovar:= [ovar]; # new variables
+print("standard", nvar, grp);
+        nvar  := [nvar]; ovar:= [ovar]; cvar:=[cvar];# new variables
         nvars := allvars(nis,nvar);
         ovars := allvars(nis,ovar);
+        cvars := allvars(nis,cvar);
         #print("vars", nvars, ovars );
 
-        _c:= convert(getPerm(sp2,dis, grp),list):
+        _c:= convert(getPerm(sp2, dis, grp),list):
         Bpol:= Jdiscr(f, allvars(nis[_c], ovar[_c]) );
 
         #print("Bez", collect(Bpol, [op(ovars),op(nvars)], distributed) );
-        #print("Bez deg", seq(degree(Bpol, ovars[k]),k=1..nops(ovars)), "_", seq(degree(Bpol, nvars[k]),k=1..nops(nvars))  );
+        print("Bez deg", seq(degree(Bpol, nvars[k]),k=1..nops(nvars)), "-", seq(degree(Bpol, cvars[k]),k=1..nops(cvars)), nvars,cvars,ovars  );
 
-        row:= [monbasis(nis,sp1, nvar)];
-        col:= [monbasis(nis,sp2, var )];
-        #print(sp1, row, sp2, col);
+        row:= [monbasis(nis, sp1, nvar)];
+        col:= [monbasis(nis, sp2, cvar)];
+        print(nvar, sp1, row, cvar, sp2, col);
 
         nvars:= [op(nvars),op(allvars(nis,var))];
         _c, _m := listTerms(Bpol, nvars );
@@ -1167,20 +1186,19 @@ $endif # impl
         grps := KK:-ng;
         
         if ( n1-n0 <> 1) then ERROR("Terms not consecutive", n1, n0) fi;
-        if (t1 - t0 < 2) then ERROR("Terms not consistent", t1, t0) fi;
+        if ( t1-t0 <  2) then ERROR("Terms not consistent" , t1, t0) fi;
         
         rows:=NULL;
         for r in KK:-K[n1][t1] do
             cols:=NULL;
-            _u:= copy(r:-mdeg);
-            for k to grps do if _u[k]<0 then _u[k]:=_u[k] + KK:-grp[k] + 1; fi;od;
+#            _u:= toDegreeVector(r:-mdeg, KK:-grp);
             for c in KK:-K[n0][t0] do
-                _v:= copy(c:-mdeg);
-                for k to grps do if _v[k]<0 then _v[k]:=_v[k] + KK:-grp[k] + 1; fi;od;
+#                _v:= toDegreeVector(c:-mdeg, KK:-grp);
                 if c:-fis subset r:-fis then
                     pols:= r:-fis minus c:-fis;
                     subsvar:= r:-exp minus c:-exp; # partial Bezoutian
-                    mat:= BezoutianPoly( [seq(f[k],k=pols)] ,_u, _v, KK:-grp, KK:-deg, var, subsvar );
+                    #mat:= BezoutianPoly( [seq(f[k],k=pols)] ,_u, _v, KK:-grp, KK:-deg, var, subsvar );
+                    mat:= BezoutianPoly( [seq(f[k],k=pols)] ,r:-mdeg, c:-mdeg, KK:-grp, KK:-deg, var, subsvar );
                 else
                     mat:= Matrix(r:-dim, c:-dim, 0, storage=sparse);
                 fi;
