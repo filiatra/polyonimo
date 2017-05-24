@@ -24,6 +24,7 @@ export
     mBezoutUnmixed,
 # Generators of multihomogeneous polynomials
     makePoly,
+    makeRandomPoly,
     makeSystem,
     makeExtremePoly,
 # Automated computation of resultant matrix
@@ -39,8 +40,8 @@ export
 # Utility
     critVect,
     vec_koszul2,
-    mDegree;
-    
+    mDegree,
+    allvars;
 local 
 #export
 # Data structures and helpers for complex
@@ -60,7 +61,6 @@ local
     lstmonof,
     multmap,
     monbasis,
-    allvars,
     homogenizePoly,
 # Brute search helpers
     isCohZero,
@@ -80,9 +80,9 @@ local
     Sylvmat,
     toDegreeVector,
     degreeBounds,
-    Jdiscr,
+    discreteJac,
     getPerm,
-    BezoutianPoly,
+    BezoutianBlock,
     Bezoutmat;
     
 uses LinearAlgebra, combinat;
@@ -291,10 +291,10 @@ uses LinearAlgebra, combinat;
 # Degree vector for bivariate Koszul matrix
     vec_koszul2:= proc(nis::Vector, dis::Matrix, ind::integer:=1)
         if ind=1 then
-            RETURN(Vector([add(deg[1,i],i=1..n+1)-1, -1 ]) );
+            RETURN(Vector([add(dis[1,i],i=1..n+1)-1, -1 ]) );
         fi:
         if ind=2 then
-            RETURN(Vector([-1, add(deg[2,i],i=1..n+1)-1 ]) );
+            RETURN(Vector([-1, add(dis[2,i],i=1..n+1)-1 ]) );
         fi:
         0;
     end:
@@ -561,7 +561,8 @@ uses LinearAlgebra, combinat;
                         #for k to KK:-ng do if u[k]<0 then u[k]:=u[k] + KK:-grp[k] + 1; fi; od:
                         # note: degree 0 is not distingushed for primal/dual
                         sum:= sum * 
-                         (Lambda^(rhs(p)[h]:-fis))[op(rhs(p)[h]:-exp)];
+                        # (Lambda^(rhs(p)[h]:-fis))[op(rhs(p)[h]:-exp)];
+	                   Lambda^(rhs(p)[h]:-fis);
                     od;
                 od;
             print( K[ lhs(v) ] = sum );
@@ -630,6 +631,12 @@ uses LinearAlgebra, combinat;
             sys:= makeSystem(KK:-grp, KK:-deg, [seq( cat(c,i-1), i=1..KK:-nv+1)],var) ;
         else
             sys:= sysp;
+            for ddeg to nops(sys) do
+                if mDegree(sys[ddeg],KK:-grp,var)<>convert(KK:-deg[..,ddeg],list) then
+                    ERROR("Equation", ddeg, "has degree",mDegree(sys[ddeg],KK:-grp,var),
+                          "instead of", convert(KK:-deg[..,ddeg],list) );
+                fi:
+            od:
         fi;
         #for now demand det/al complex
         if not ArrayNumElems(KK:-K,'NonZero')=2 then ERROR("Not Determinantal") fi;
@@ -826,6 +833,18 @@ uses LinearAlgebra, combinat;
             p:= p + c[op(mDegree(s[i],nis,var))] * s[i];
         od;
         p;
+    end:
+
+### Make random polynomial with m-degree di
+    makeRandomPoly:= proc(nis::Vector, di::Vector, var, sz:=1..100)
+    local _c_list, rlist, roll, sf;
+        randomize();
+        unassign('c');
+        sf := makePoly(nis,di,c,var);
+        _c_list := [coeffs(sf,allvars(l,var))];
+        roll := rand(sz);
+        rlist := [seq(_c_list[k]=roll(),k=1..nops(_c_list))];
+        subs(op(rlist), sf); #, rlist;
     end:
     
 ### Make extreme polynomial with degree dis
@@ -1047,31 +1066,55 @@ $endif # impl
         [d1], [d2];
     end:#blockStructure
     
-    
+
 # Determinant of the discrete Jacobian
-    Jdiscr := proc(lp::list, vx::list) #vy::list
-    local N, i, j, mtr0, mtr;
+    discreteJac := proc(lp::list, nis::Vector, var::list,
+                        vy::list, # sub. to
+                        vx::list  # sub. from
+                       )
+    local vxs, vars, svar, ovar, svars, ovars, N, i, j, mtr0, mtr;
+
+        vxs  := allvars(nis,vx  ); # sub. from
+        vars := allvars(nis,var ); # lp-vars
         
+        svar := NULL: ovar := NULL:
+        for i to nops(vx) do
+            if vx[i] <> vy[i] then
+                svar:= svar, vy[i];
+                ovar:= ovar, vx[i];
+            else
+                svar:= svar, 0;
+                ovar:= ovar, 0;
+            fi:
+        od:
+        svar:=[svar]; ovar:=[ovar];
+        svars := allvars(nis,svar);
+        ovars := allvars(nis,ovar);
+
         N := nops(lp);
-        if nops(vx) <> N-1 then print(nops(lp), vx );
-            ERROR("The number of polynomials must be the number of variables +1", vx, nops(lp));
+        if nops(svars) <> N-1 then
+            #print(nops(lp), svars );
+            ERROR("The number of polynomials must be the number of variables +1", svars, nops(lp));
         fi;
 
         mtr0 := Matrix(N,N);
-        for i from 1 to N do mtr0[i,1] := lp[i] od;
+        for i from 1 to N do
+            mtr0[i,1] := subs(seq(vars[k]=vxs[k],k=1..nops(vxs) ), lp[i]);
+        od;
+
         for j from 2 to N do
             for i from 1 to N do
-                mtr0[i,j]:= subs(vx[j-1]= cat(_,vx[j-1]) ,mtr0[i,j-1]);
+                mtr0[i,j]:= subs(ovars[j-1]= svars[j-1], mtr0[i,j-1]);
             od;
         od;
-        #print("setup:", mtr0);
+        #print("setup:", svar, mtr0);
         
         mtr := Matrix(N,N);
-        for i from 1 to N do mtr[i,1] := lp[i] od;
+        for i from 1 to N do mtr[i,1] := mtr0[i,1] od;
         for j from 2 to N do
             for i from 1 to N do
                 mtr[i,j] := expand(simplify(((mtr0[i,j]-mtr0[i,j-1])
-                                             /(cat(_,vx[j-1]) - vx[j-1])) ));
+                                             /(svars[j-1] - ovars[j-1])) ));
             od;
         od;
         #print("final:", mtr);
@@ -1088,7 +1131,7 @@ $endif # impl
         for i in grps do
             if  mm[k]+1 = add(deg[k,j],j=1..i) then
                 s[k]:= i;
-print("s=",convert(s,list), "due to ", "k=",k,"i=", i);
+#print("s=",convert(s,list), "due to ", "k=",k,"i=", i);
             fi:
         od:
     od:
@@ -1114,53 +1157,32 @@ print("s=",convert(s,list), "due to ", "k=",k,"i=", i);
     end:
 
 ### Bezoutian block of S(sp1)->S(sp2)
-    BezoutianPoly:= proc(f,hp1::Vector,hp2::Vector,nis::Vector,
+    BezoutianBlock:= proc(f,hp1::Vector,hp2::Vector,nis::Vector,
                          dis::Matrix, var::list, grp::set:={2017} )
-    local _c, _m, i,j,row,col, nvar, nvars, ovar, ovars, Bpol, mat, sp1, sp2,
-        cvar, cvars;
+    local _c, _m, i, j, row, col, nvars, Bpol, mat, sp1, sp2, cvar, rvar;
         sp1:= toDegreeVector(hp1, nis);
         sp2:= toDegreeVector(hp2, nis);
         if grp={2017} then grp:={seq(1..nops(var))} fi;
         
-        # should be the same as below ?
-#print("deg",hp1,hp2);
-#        nvar:=NULL:
-#        for i to nops(var) do
-#        nvar:= nvar,`if`(hp1[i]<0,cat(_,var[i]),var[i]);
-#        od:
-#        print("negs",nvar,grp);
-
-        nvar:=NULL; ovar:=NULL; cvar:=NULL; #todo nvar --> rvar ? or introduce new
+        rvar:=NULL; cvar:=NULL; 
         for i to nops(var) do
-
-            cvar:= cvar, `if`(hp2[i]<0,cat(_,var[i]),var[i]); #var[i];                
-
-            if member(i,grp) then
-                nvar:= nvar,cat(_,var[i]);
-                ovar:= ovar, var[i]; #`if`(hp2[i]<0,cat(_,var[i]),var[i]); #var[i];
-            else
-                nvar:= nvar, `if`(hp1[i]<0,cat(_,var[i]),var[i]); # var[i];
-                ovar:= ovar, 0;
-            fi;
+            rvar:= rvar, `if`(hp1[i]<0,cat(_,var[i]),var[i]);
+            cvar:= cvar, `if`(hp2[i]<0,cat(_,var[i]),var[i]);
+            #if member(i,grp) then .. else .. fi:
         od;
-print("standard", nvar, grp);
-        nvar  := [nvar]; ovar:= [ovar]; cvar:=[cvar];# new variables
-        nvars := allvars(nis,nvar);
-        ovars := allvars(nis,ovar);
-        cvars := allvars(nis,cvar);
-        #print("vars", nvars, ovars );
+        rvar:=[rvar]; cvar:=[cvar];
 
         _c:= convert(getPerm(sp2, dis, grp),list):
-        Bpol:= Jdiscr(f, allvars(nis[_c], ovar[_c]) );
+        Bpol:= discreteJac(f, nis[_c], var[_c], rvar[_c], cvar[_c] );
+        #print("from", rvar, "to", cvar);
+        #print("Bez", collect(Bpol, [x[1],y[1],_x[1],_y[1]], distributed) );
+        #print("Bez deg", mDegree(Bpol,nis,rvar), "-", mDegree(Bpol,nis,cvar) );
 
-        #print("Bez", collect(Bpol, [op(ovars),op(nvars)], distributed) );
-        print("Bez deg", seq(degree(Bpol, nvars[k]),k=1..nops(nvars)), "-", seq(degree(Bpol, cvars[k]),k=1..nops(cvars)), nvars,cvars,ovars  );
-
-        row:= [monbasis(nis, sp1, nvar)];
+        row:= [monbasis(nis, sp1, rvar)];
         col:= [monbasis(nis, sp2, cvar)];
-        print(nvar, sp1, row, cvar, sp2, col);
+        #print(rvar, sp1, row, cvar, sp2, col);
 
-        nvars:= [op(nvars),op(allvars(nis,var))];
+        nvars:= [op(allvars(nis,rvar)),op(allvars(nis,cvar))];
         _c, _m := listTerms(Bpol, nvars );
         mat := Matrix(nops(row),nops(col));
         for i to nops(row) do
@@ -1191,14 +1213,11 @@ print("standard", nvar, grp);
         rows:=NULL;
         for r in KK:-K[n1][t1] do
             cols:=NULL;
-#            _u:= toDegreeVector(r:-mdeg, KK:-grp);
             for c in KK:-K[n0][t0] do
-#                _v:= toDegreeVector(c:-mdeg, KK:-grp);
                 if c:-fis subset r:-fis then
                     pols:= r:-fis minus c:-fis;
-                    subsvar:= r:-exp minus c:-exp; # partial Bezoutian
-                    #mat:= BezoutianPoly( [seq(f[k],k=pols)] ,_u, _v, KK:-grp, KK:-deg, var, subsvar );
-                    mat:= BezoutianPoly( [seq(f[k],k=pols)] ,r:-mdeg, c:-mdeg, KK:-grp, KK:-deg, var, subsvar );
+                    subsvar:= r:-exp minus c:-exp; # partial Bezoutian:
+                    mat:= BezoutianBlock( [seq(f[k],k=pols)] ,r:-mdeg, c:-mdeg, KK:-grp, KK:-deg, var, subsvar );
                 else
                     mat:= Matrix(r:-dim, c:-dim, 0, storage=sparse);
                 fi;
