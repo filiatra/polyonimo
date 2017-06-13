@@ -577,7 +577,13 @@ uses LinearAlgebra, combinat;
 #########################################################################
 # Matrix assembly
 #########################################################################
-    
+   
+    # to do, minimize mBezout number, return nis, dis
+    # getOptimalData := proc(sys::list, ivar::list)
+
+    # to do
+    #findResMatrix2 := proc(sys::list, ivar::list, nis::Vector := [], idis::Matrix := [])
+
     findResMatrix := proc(nis::Vector, dis::Matrix, ivar::list(symbol) :=[],
                           mis::Vector := Vector(), 
                           letters::list(symbol) := ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o'])
@@ -633,7 +639,7 @@ uses LinearAlgebra, combinat;
             sys:= sysp;
             for ddeg to nops(sys) do
                 if mDegree(sys[ddeg],KK:-grp,var)<>convert(KK:-deg[..,ddeg],list) then
-                    ERROR("Equation", ddeg, "has degree",mDegree(sys[ddeg],KK:-grp,var),
+                    WARNING("Equation", ddeg, "has degree",mDegree(sys[ddeg],KK:-grp,var),
                           "instead of", convert(KK:-deg[..,ddeg],list) );
                 fi:
             od:
@@ -700,14 +706,20 @@ uses LinearAlgebra, combinat;
 ### Monomials indexing the matrix of K_{v1}->K_{v0}
     matrixIndex:= proc(KK::WCOMPLEX, varp:=[], v1::integer := 1, v0::integer := 0)
     local grps, var, _u, cols, rows, row, r, k;
-        
+ 
+        if varp = [] then
+            var:= ['x','y','z','u','v','w','s','t'][1..KK:-ng];
+        else
+            var:=varp;
+        fi:
+       
         grps := KK:-ng;
         
         rows:=NULL;
         for row in rtable_elems(KK:-K[v1]) do
            for r in rhs(row) do
                _u:= toDegreeVector(r:-mdeg, KK:-grp);
-               rows:= rows, [monbasis(KK:-grp,_u,varp)];
+               rows:= rows, [monbasis(KK:-grp,_u,var)];
             od;
          od:
 
@@ -715,7 +727,7 @@ uses LinearAlgebra, combinat;
         for row in rtable_elems(KK:-K[v0]) do
              for r in rhs(row) do
             _u:= toDegreeVector(r:-mdeg, KK:-grp);
-                cols:= cols, [monbasis(KK:-grp,_u,varp)];
+                cols:= cols, [monbasis(KK:-grp,_u,var)];
             od;
          od:
 
@@ -830,7 +842,7 @@ uses LinearAlgebra, combinat;
         s:=[monbasis(nis, di, var)];
         unassign('c');
         for i from 1 to nops(s) do
-            p:= p + c[op(mDegree(s[i],nis,var))] * s[i];
+            p:= p + c[seq(degree(s[i],vars[k]),k=1..nops(vars))] * s[i];
         od;
         p;
     end:
@@ -862,7 +874,7 @@ uses LinearAlgebra, combinat;
         v:= [lstmonof(evalm(p),vars)];
         p:=0;
         for i from 1 to nops(v) do
-            p:= p + c[op(mDegree(v[i],nis,var))] * v[i];
+            p:= p + c[seq(degree(v[i],vars[k]),k=1..nops(vars))] * v[i];
         od;
         p;
     end:

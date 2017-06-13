@@ -19,7 +19,8 @@ description "Polyonimo benchmark Module";
 option package;
 
 export 
-minrankSystem;
+minrankSystem,
+makeRandomSystem;
 
 
 #########################################################################
@@ -44,5 +45,20 @@ local l, deg, i, g;
 end:
 
 
-end:#end benchmark
+### Make random system
+    makeRandomSystem:= proc(nis::Vector, dis::Matrix, var, sz:=1..100)
+    local _c_list, rlist, roll, sf, i, sys:= NULL;
+        randomize();
+        unassign('c');
+        roll := rand(sz);
+        
+        for i to ColumnDimension(dis) do
+            sf := makePoly(nis,dis[..,i],c,var);
+            _c_list := [coeffs(sf,allvars(l,var))];
+            rlist := [seq(_c_list[k]=roll(),k=1..nops(_c_list))];
+            sys := sys, subs(op(rlist), sf); #, rlist;
+        od:
+        return [sys];
+    end:
 
+end:#end benchmark
