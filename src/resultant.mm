@@ -661,10 +661,10 @@ uses LinearAlgebra, combinat;
                     matr:= Matrix( wcDimension(rhs(row)), wcDimension(rhs(col)), 0, storage=sparse);
                 else if ddeg=1 then
                          matr:= Sylvmat(KK, v1,lhs(row), v0,lhs(col), sys, var);
-                         #print("Sylv", row, col,"-->", Dimension(matr));
+                         #print("Sylv", lhs(row), lhs(col),"-->", Dimension(matr));
                      else
                          matr:= Bezoutmat(KK, v1,lhs(row), v0,lhs(col), sys, var);
-                         #print("Bez", row, col,"-->", Dimension(matr));
+                         #print("Bez", lhs(row), lhs(col) ,"-->", Dimension(matr));
                      fi;fi;
                 cols:= cols, matr;
             od;
@@ -1214,7 +1214,7 @@ $endif # impl
                      n1::integer, t1::integer, 
                      n0::integer, t0::integer, f, var)
         
-    local pols, subsvar, n,grps, r,c, rows, cols, _u, _v, k, mat;
+    local pols, subsvar, n,grps, r,c, rows, cols, _u, _v, k, mat, ii,i;
 
         n:= KK:-nv;
         grps := KK:-ng;
@@ -1229,7 +1229,10 @@ $endif # impl
                 if c:-fis subset r:-fis then
                     pols:= r:-fis minus c:-fis;
                     subsvar:= r:-exp minus c:-exp; # partial Bezoutian:
-                    mat:= BezoutianBlock( [seq(f[k],k=pols)] ,r:-mdeg, c:-mdeg, KK:-grp, KK:-deg, var, subsvar );
+                    i:=0: for ii in c:-fis do if member(ii,r:-fis,'t') then i:=i+t; fi: od:
+                    #print("p:", c:-fis, r:-fis, "sgn", i);
+                    mat:= ((-1)^(i)) *
+                    BezoutianBlock( [seq(f[k],k=pols)] ,r:-mdeg, c:-mdeg, KK:-grp, KK:-deg, var, subsvar );
                 else
                     mat:= Matrix(r:-dim, c:-dim, 0, storage=sparse);
                 fi;
