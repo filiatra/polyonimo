@@ -769,7 +769,7 @@ uses LinearAlgebra, combinat;
 
     listTerms := proc(p, vars::list)
     local _m_list, _c_list;
-        _c_list := [coeffs(p,vars,'_m_list')];
+        _c_list := [coeffs(expand(p),vars,'_m_list')];
         _c_list, [_m_list];
     end:
 
@@ -1186,7 +1186,7 @@ $endif # impl
 
         _c:= convert(getPerm(sp2, dis, grp),list):
         Bpol:= discreteJac(f, nis[_c], var[_c], rvar[_c], cvar[_c] );
-        #print("from", rvar, "to", cvar);
+        #print("from", rvar, "to", cvar, "perm", _c);
         #print("Bez", collect(Bpol, [x[1],y[1],_x[1],_y[1]], distributed) );
         #print("Bez deg", mDegree(Bpol,nis,rvar), "-", mDegree(Bpol,nis,cvar) );
 
