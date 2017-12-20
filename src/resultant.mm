@@ -26,6 +26,7 @@ export
     makePoly,
     makeRandomPoly,
     makeSystem,
+    makeRandomSystem,
     makeExtremePoly,
 # Automated computation of resultant matrix
     findResMatrix,
@@ -929,6 +930,19 @@ uses LinearAlgebra, combinat;
         lst:=NULL;
         for i from 1 to n1 do
             lst:= lst, makePoly(nis, Column(dis,i), coef[i] ,var);
+        od;
+        [lst];
+        
+    end:
+
+### Make random multihomogeneous system
+    makeRandomSystem:= proc(nis::Vector, dis::Matrix, 
+                      var:= ['x','y','z','u','v','w','s','t'][1..Dimension(nis)], sz:=1..100)
+    local i,n1,lst;
+        n1:=ColumnDimension(dis);
+        lst:=NULL;
+        for i from 1 to n1 do 
+            lst:= lst, makeRandomPoly(nis, Column(dis,i), var, sz);
         od;
         [lst];
         
