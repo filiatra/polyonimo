@@ -38,10 +38,15 @@ export
     makeMatrix,
     matrixIndex,
 # Utility
-    critVect,
-    vec_koszul2,
     mDegree,
-    allvars;
+    allvars,
+# Specific resultant formulas
+    vec_macaulay,
+    vec_sylvester,
+    vec_1bilinear,
+    vec_critical,
+    vec_koszul2,
+    vec_bezout;
 local 
 #export
 # Data structures and helpers for complex
@@ -50,10 +55,6 @@ local
     NewTERM,
     NewCOH,
     blockStructure,
-# Specific resultant formulas
-    macVect,
-    unmixedSylvVect,
-    bilinearSylvVect,
 # Polynomial manipulation
     coeffOf,
     getCoeff,
@@ -71,6 +72,7 @@ local
     Sdim,
     getTerm,
     isDeterminantal,
+    isUnmixed,
     detStats,
     sortPerm,
     columnsum,
@@ -83,7 +85,8 @@ local
     discreteJac,
     getPerm,
     BezoutianBlock,
-    Bezoutmat;
+    Bezoutmat,
+    BezToMatrix;
     
 uses LinearAlgebra, combinat;
     
@@ -255,7 +258,7 @@ uses LinearAlgebra, combinat;
 #########################################################################
     
 # Critical degree  vector
-    critVect:= proc(nis::Vector, dis::Matrix)
+    vec_critical:= proc(nis::Vector, dis::Matrix)
     local grps,n1,r,s;
         grps := Dimension(nis);
         n1:=ColumnDimension(dis);
@@ -265,7 +268,7 @@ uses LinearAlgebra, combinat;
     end:
     
 # Macaulays matrix degree vector
-    macVect:= proc(nis::Vector, dis::Matrix)
+    vec_macaulay:= proc(nis::Vector, dis::Matrix)
     local grps,n,s;
         grps := Dimension(nis);
         n:=ColumnDimension(dis)-1;
@@ -275,18 +278,23 @@ uses LinearAlgebra, combinat;
     
 # Degree vector for unmixed Sylvester matrix
 # we use the identity permutation
-    unmixedSylvVect:= proc(nis::Vector, dis::Vector)
+    vec_sylvester := proc(nis::Vector, dis::Matrix) #to add: ind=1..
     local grps, i, mis, s;
+
         grps := Dimension(nis);
+        if not isUnmixed(nis,dis) then return []; fi;
+        for i to grps do
+            if min(nis[i], dis[i,1])>1 then return []; fi:
+        od:
+
         s:= 1:
         mis:=Vector(grps);
         for i to grps do
             s := s + nis[i];
-            mis[i] := s * dis[i] - nis[i];
+            mis[i] := s * dis[i,1] - nis[i];
         od;
         mis;
     end:
-    
     
 # Degree vector for bivariate Koszul matrix
     vec_koszul2:= proc(nis::Vector, dis::Matrix, ind::integer:=1)
@@ -299,21 +307,53 @@ uses LinearAlgebra, combinat;
         0;
     end:
     
-    bilinearSylvVect:= proc( nis::vector, i::integer := 1)
+    # Note: 3+3 duals/transposed
+    vec_1bilinear:= proc( nis::Vector, i::integer := 1)
     local mis, n, d, s;
         n:= nis[1]+nis[2]:
-        d:=vector([1,1]):
-        s:= vector([seq(1,k=0..n)]):
+        d:=Vector([1,1]):
+        s:= Vector([seq(1,k=0..n)]):
         
         if i=1 then
-            mis := vector([1,nis[1]+1]);
+            mis := Vector([1,nis[1]+1]);
         else if i=2 then
-                 mis := vector([nis[2]+1,1]);
+                 mis := Vector([nis[2]+1,1]);
              else # i=3
-                 mis := vector([-1,nis[1]+1]);
+                 mis := Vector([-1,nis[1]+1]);
              fi:
         fi:
         mis;
+    end:
+
+    vec_bezout := proc(nis::Vector, dis::Matrix)
+        local pp, mv, i, j, v, t, n1:=ColumnDimension(dis), r := RowDimension(dis);
+
+        # Consider permutation n1,...,nr of nis
+        # consider permutation d0,...,dn of dis
+
+        mv := Vector(r):
+        pp := Vector(r):
+
+        t := utility:-first_perm(n1):
+        while t<>NULL do #print("t",t);
+
+            v := utility:-first_perm(r ):
+            while v<>NULL do #print("v",v);
+
+                for i to r do
+                    pp[i] := # i.e. nis[1]+..+nis[i]
+                    add(`if`(v[k]<=v[i], nis[k], 0), k=1..r);
+
+                    mv[i] := -nis[i] + add(dis[i,t[k]],k=1..pp[i]+1) - 1;
+                od:
+
+                #print(convert(mv,list));
+
+                v := utility:-next_perm(v);
+            od:
+            t := utility:-next_perm(t);
+        od:
+
     end:
     
 # Mixed bilinear system
@@ -623,7 +663,7 @@ uses LinearAlgebra, combinat;
     end:
     
 ### The Matrix K_v1 -> K_v0
-    makeMatrix:= proc(KK::WCOMPLEX, sysp:=[], varp:=[], v1::integer := 1, v0::integer := 0)
+    makeMatrix:= proc(KK::WCOMPLEX, sysp:=[], varp:=['x','y','z','u','v','w','s','t'][1..KK:-ng], v1::integer := 1, v0::integer := 0)
     local ddeg, sys, var, matr, row, col, rows, cols, n:= KK:-nv; #, d1, d2;
         
         if varp = [] then
@@ -639,8 +679,9 @@ uses LinearAlgebra, combinat;
             sys:= sysp;
             for ddeg to nops(sys) do
                 if mDegree(sys[ddeg],KK:-grp,var)<>convert(KK:-deg[..,ddeg],list) then
-                    WARNING("Equation", ddeg, "has degree",mDegree(sys[ddeg],KK:-grp,var),
-                          "instead of", convert(KK:-deg[..,ddeg],list) );
+                   WARNING("Degree mismatch");
+                    lprint("Equation", ddeg, "has degree",mDegree(sys[ddeg],KK:-grp,var),
+                          "instead of", convert(KK:-deg[..,ddeg],list));
                 fi:
             od:
         fi;
@@ -704,7 +745,7 @@ uses LinearAlgebra, combinat;
     end:
     
 ### Monomials indexing the matrix of K_{v1}->K_{v0}
-    matrixIndex:= proc(KK::WCOMPLEX, varp:=[], v1::integer := 1, v0::integer := 0)
+    matrixIndex:= proc(KK::WCOMPLEX, varp:=['x','y','z','u','v','w','s','t'][1..KK:-ng], v1::integer := 1, v0::integer := 0)
     local grps, var, _u, cols, rows, row, r, k;
  
         if varp = [] then
@@ -867,7 +908,7 @@ uses LinearAlgebra, combinat;
         p:=1;v:=1;
         for i to Dimension(nis) do
             for j to nis[i] do
-                p:= p*(1+ vars[v]^nis[i] );
+                p:= p*(1+ vars[v]^dis[i] );
                 v:= v+1;
             od;od;
         
@@ -926,9 +967,19 @@ uses LinearAlgebra, combinat;
     
     sortPerm := proc(data)
     local i::integer, ind::list(integer) := [seq(1..nops(data))];
-        sort(ind, proc(a,b) data[a]<data[b] end);
+        sort(ind, proc(a,b) evalb(data[ind[a]]<=data[ind[b]]) end);
     end:
     
+    isUnmixed := proc(nis::Vector,dis::Matrix)
+        local p, n1;
+
+        n1:=ColumnDimension(dis):
+        for p from 2 to n1 do
+           if not Equal(dis[..,1],dis[..,p]) then return false; fi:
+       od:
+       return true;
+    end:
+       
     isDeterminantal := proc(nis::Vector,dis::Matrix,mis::Vector)
     local n1, grps, i, p, q, c:
         grps:=Dimension(nis):
@@ -1042,7 +1093,7 @@ $else
 $endif # impl
         
         if _nresults = 1 or _nresults = undefined then
-             return [result];
+             return ([result]);
         else
             upp := NULL;
             for cand in [result] do
@@ -1122,11 +1173,11 @@ $endif # impl
         #print("setup:", svar, mtr0);
         
         mtr := Matrix(N,N);
-        for i from 1 to N do mtr[i,1] := mtr0[i,1] od;
+        mtr[..,1] := mtr0[..,1];
         for j from 2 to N do
             for i from 1 to N do
                 mtr[i,j] := expand(simplify(((mtr0[i,j]-mtr0[i,j-1])
-                                             /(svars[j-1] - ovars[j-1])) ));
+                                             /(svars[j-1] - ovars[j-1]))));
             od;
         od;
         #print("final:", mtr);
@@ -1136,8 +1187,10 @@ $endif # impl
     
     getPerm := proc(mm::Vector, deg::Matrix, grps::set)
     local tmp, i, k, n:=Dimension(mm),
-        s:=Vector([seq(1..n)]);
+        s:=Vector([seq(1..n)]), ss := false;
         #s:=Vector([seq(n-k,k=0..n-1)]);
+
+    while (ss) do
 
     for k in grps do
         for i in grps do
@@ -1148,6 +1201,8 @@ $endif # impl
         od:
     od:
 #print("perm=",convert(s,list));
+
+od:
         
     if convert(s,set)<>{seq(1..n)} then 
         #ERROR("Perm:",convert(s,list));
@@ -1167,6 +1222,31 @@ $endif # impl
         od;
             dvec;
     end:
+
+    BezToMatrix := proc(Bpol, nis, rvar, cvar)
+       local sp1,sp2,row,col,nvars,_c,_m,mat,i,j;
+
+       sp1 := -Vector(mDegree(Bpol,nis,rvar));
+       sp2 := Vector(mDegree(Bpol,nis,cvar));
+
+       row:= [monbasis(nis, sp1, rvar)];
+       col:= [monbasis(nis, sp2, cvar)];
+       print(rvar, sp1, row, cvar, sp2, col);
+
+       nvars:= [op(allvars(nis,rvar)),op(allvars(nis,cvar))];
+       _c, _m := listTerms(Bpol, nvars );
+       print(_c);print(_m);
+
+       mat := Matrix(nops(row),nops(col));
+       for i to nops(row) do
+           for j to nops(col) do
+               mat[i,j] := getCoeff(expand(col[j]/row[i]), _c, _m );
+           od;
+       od;
+        #print("Det", factor(Determinant(mat)) );
+
+       mat;
+   end:
 
 ### Bezoutian block of S(sp1)->S(sp2)
     BezoutianBlock:= proc(f,hp1::Vector,hp2::Vector,nis::Vector,
@@ -1189,6 +1269,7 @@ $endif # impl
         #print("from", rvar, "to", cvar, "perm", _c);
         #print("Bez", collect(Bpol, [x[1],y[1],_x[1],_y[1]], distributed) );
         #print("Bez deg", mDegree(Bpol,nis,rvar), "-", mDegree(Bpol,nis,cvar) );
+        #print("BMAT", BezToMatrix(Bpol, nis, rvar, cvar) );
 
         row:= [monbasis(nis, sp1, rvar)];
         col:= [monbasis(nis, sp2, cvar)];

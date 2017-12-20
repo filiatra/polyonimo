@@ -22,6 +22,7 @@ export
 num_comb,
 first_comb,
 next_comb,
+comb_place,
 num_perm,
 first_perm,
 next_perm,
@@ -86,6 +87,14 @@ end:
 #
 num_comb:=proc(n::integer,r::integer)
 binomial(n,r);
+end:
+
+comb_place := proc( c::Or(list,Vector,set) )
+local i, s := 1;
+    for i to nops(c) do
+        s := s + binomial(c[i],i);
+    od:
+return s;
 end:
 
 #################################################################

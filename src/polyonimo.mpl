@@ -61,7 +61,8 @@ ModuleLoad:= proc()
     # K::Array(WTERM) indexed by v = -n..n+1
     TypeTools[AddType]( WCOMPLEX, 'record(nv::integer, ng::integer, grp::Vector,deg::Matrix,mvc::Vector, K::Array )'); # ::Array(WTERM)
     
-lprint(`Polyonimo Maple Modules, Angelos Mantzaflaris, 2017`);
+printf("Polyonimo Maple Modules, Angelos Mantzaflaris, 2017\n");
+
 end:
 # Explicitly call ModuleLoad here so the type is registered when this
 # code is cut&pasted in.  ModuleLoad gets called when the module is
