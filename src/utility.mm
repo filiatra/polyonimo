@@ -156,7 +156,7 @@ end:
 
 
 #
-# Number of r-combination of [1..n]
+# Number of permutations of [1..n]
 #
 num_perm:=proc(n::integer)
 factorial(n);
