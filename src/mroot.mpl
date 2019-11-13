@@ -76,7 +76,8 @@ cyclicn, kssn, expmultn,
 #Experimental
 make_basis_pair,
 dual_constraints_1, closedness_equations,
-delta;
+delta,
+CoeffsOfLinComb, PolyLinearComb;
 
 export
 # rev-lex compare on differentials
@@ -105,6 +106,19 @@ option package;
 
 use LinearAlgebra in
 
+
+CoeffsOfLinComb:= proc( L::list(polynom), V::set(name):= indets(L, And(name, Not(constant))) )
+local c, k, C:= {c[k] $ k= 1..nops(L)},
+    S:= solve({coeffs(expand(`+`((C*~L)[])), V)}, C),
+    F:= indets(rhs~(S), name) intersect C=~1;
+    eval([C[]], eval(S,F) union F);
+end proc:
+
+PolyLinearComb:= proc(F::list(polynom), f::And(polynom, Not(identical(0))),
+                      V::set(name):= indets([F,f], And(name, Not(constant)))  )
+local C:= CoeffsOfLinComb([f, F[]], V);
+    if C[1]=0 then (false, []) else (true, -C[2..] /~ C[1]) end if
+end proc:
 
 
 delta:= proc(i::integer, j::integer)
@@ -332,7 +346,6 @@ set_coeff := proc(df::Matrix, mm::list, _val)
 sd;
 end:
 
-
 #
 # symbolic_dual
 #
@@ -347,7 +360,7 @@ symbolic_dual := proc(dp::integer,n::integer,  vars::list:=[], BB:=[] )
     DD:=[];
     SS:=NULL;
 
-    lv :=[a,b,g,h,i,j,l,m,n,o,q,r,t,u,v,w]:
+    lv :=[a,b,g,h,l,m,n,o,q,r,t,u,v,w]:
 
     for j to dp do
 
@@ -359,7 +372,7 @@ symbolic_dual := proc(dp::integer,n::integer,  vars::list:=[], BB:=[] )
 	#Remove elements of BB
         for _ex to nops(EX) do
             for i to nops(DD) do
-        	DD[i]:= set_coeff(DD[i], EX[i], 0);
+        	DD[i]:= set_coeff(DD[i], EX[_ex], 0);
         od:od:
 
         #print("DD",DD);
@@ -400,8 +413,23 @@ symbolic_dual := proc(dp::integer,n::integer,  vars::list:=[], BB:=[] )
         c:=next_comb(c,n);
     od;#all combinations
 
+
+##### Condition (iii), MM2011
+    if BB <> [] then
+        c:=NULL;
+        for k from 2 to nops(SS) do
+            t1 := to_polynomial(SS[k],var);
+            for i from 2 to nops(BB) do
+                tt1:= coeffof(BB[i],t1,var);
+                if 0<>tt1 then
+                    c := c, tt1 = delta(k,i);
+                fi:
+            od:
+        od;
+    fi:
+
     #print("symbolic_dual_OUT:", SS);
-[SS, [lstcoefof(p,var)]] ;
+[SS, [c,lstcoefof(p,var)]] ;
 end:
 
 #
@@ -3111,6 +3139,16 @@ local BB,AA, m, MM,j,i ;
     od;
     MM;
 end:
+
+#
+# Computes the matrix of multiplication in R/Q_z
+#
+parametric_mult_table := proc (sdual::list, BB::list, var::list)
+    local AA, m, MM,j,i ;
+
+MM;
+end:
+
 
 #
 # Return sign of number
