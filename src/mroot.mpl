@@ -22,7 +22,7 @@ export
 # Deflation
 deflate, deflate_lin, deflate_incr, deflate_lvz,
 deflate_only, deflate_hint,
-new_system,new_system1,new_system2,
+new_system0,new_system,new_system1,new_system2,
 deflate_system,new_system4,
 get_system,
 pert_poly, pert_system, pert_point,
@@ -77,7 +77,8 @@ cyclicn, kssn, expmultn,
 make_basis_pair,
 dual_constraints_1, closedness_equations,
 delta,
-CoeffsOfLinComb, PolyLinearComb;
+CoeffsOfLinComb, PolyLinearComb, set_coeff,
+parametric_mult_table;
 
 export
 # rev-lex compare on differentials
@@ -129,7 +130,7 @@ end:
 ## Deflation by perturbation of the system
 ##
 deflate := proc( f::list, var::list, z::list, tol:=0, my_ind:=[] )
-local n, AA, DD,N, J1,J2, ind, per ;
+local i,k,j, n, AA, DD,N, J1,J2, ind, per ;
     n:=nops(var);
     per:=[cat(e, 1 .. nops(f))];
 
@@ -182,7 +183,7 @@ end:
 ##
 ## Deflation by LVZ/Zheng
 deflate_lvz := proc( f::list, var::list, z::list, tol:=0 , v::symbol:=`a`)
-local n, A, DD,N, J,Jev, rnum, vvars, i, R, rk ;
+local k,n, A, DD,N, J,Jev, rnum, vvars, i, R, rk ;
     n:=nops(var);
 
     unassign(v);
@@ -360,10 +361,11 @@ symbolic_dual := proc(dp::integer,n::integer,  vars::list:=[], BB:=[] )
     DD:=[];
     SS:=NULL;
 
-    lv :=[a,b,g,h,l,m,n,o,q,r,t,u,v,w]:
+    lv :=[a,b,g,h,l,o,q,r,t,u,v,w]:
 
     for j to dp do
 
+        #print(j);
         unassign(lv[j]);
 
         # Get candidate set
@@ -429,7 +431,7 @@ symbolic_dual := proc(dp::integer,n::integer,  vars::list:=[], BB:=[] )
     fi:
 
     #print("symbolic_dual_OUT:", SS);
-[SS, [c,lstcoefof(p,var)]] ;
+SS, [c], [lstcoefof(p,var)];
 end:
 
 #
@@ -460,7 +462,7 @@ end:
 # Deflate by adding linear perturbation on the equations
 #
 deflate_lin := proc( f::list, var::list, z::list, tol:=0, my_ind:=[],DB:=[] )
-local n ,N, J1,J2,DD, ind, per ;
+local i,k,j,n ,N, J1,J2,DD, ind, per ;
     n:=nops(var);
     #per:=[cat(e, 1 .. nops(f))];
 
@@ -501,7 +503,7 @@ end:
 # Deflate without adding any new variables
 #
 deflate_only := proc( f::list, var::list, z::list, tol:=0, my_ind:=[] )
-local n, AA, DD,N, J1,J2, ind, per ;
+local i,k,j,w,n, AA, DD,N, J1,J2, ind, per ;
     n:=nops(var);
     per:=[cat(e, 1 .. nops(f))];
 
@@ -554,7 +556,7 @@ end:
 # a deflated system
 #
 deflate_hint := proc( f::list, var::list, z::list, DD::list, tol:=0 )
-local n, AA, N, J1,J2, ind, per ;
+local i,k,n, AA, N, J1,J2, ind, per ;
     n:=nops(var);
     per:=[cat(e, 1 .. nops(f))];
 
@@ -598,6 +600,7 @@ end:
 # Center of a rectangular domain
 #
 dom_center:= proc(dom::list)
+local i;
     [seq( (iend(dom[i])+istart(dom[i]))/2 , i=1..nops(dom) )];
 end:
 
@@ -607,7 +610,7 @@ end:
 # Certify a multiple root of the approximate system f inside dom
 #
 certify_root := proc( f::list,var::list, dom::list )
-    local tol, DF, n, z;
+    local k,tol, DF, n, z;
 
     n:=nops(dom);
     tol:= dom_size(dom);
@@ -667,7 +670,7 @@ end:
 # Compute Rump's inclusion formula
 #
 rump := proc ( f::list,var::list, xs::list, X::list)
-local Id, J, R, M, fev;
+local j, Id, J, R, M, fev;
 
 J:= VectorCalculus:-Jacobian(f, var);
 Id:= Matrix(nops(var),shape=identity) ;
@@ -790,6 +793,25 @@ symb_diff := proc ( df::Matrix, aa:= `a` )
 sd;
 end:
 
+
+#
+# Get all equations
+#
+new_system0:= proc (f::list, var::list, dual_basis::list)
+    local n, g,i,j,ff,t, fu;
+    n:=nops(var);
+
+    ff:=NULL;
+    for i to nops(dual_basis) do
+        for j to nops(f) do
+            ff:= ff, diff_poly(f[j],var,dual_basis[i])  ;
+        od;
+    od;
+
+expand([ff]);
+end:
+
+
 #
 # Perturbe wrt a quotient basis
 #
@@ -857,7 +879,7 @@ end:
 # DD must have symbolic coefficients, BB it's dual monomial basis
 #
 deflate_system:= proc ( f::list,var::list, z::list, tol:= 0, ch:=[], iv:= {} )
-    local i,j,ff , B, A, H, P, nvar, avar, v, p;
+    local J2, ind,i,j,ff , B, A, H, P, nvar, avar, v, p;
 
     # Compute primal-dual pair
     B, A := mourrain( f, var, z , tol);
@@ -917,7 +939,7 @@ end:
 # Compute the dual basis given the primal basis A incrementally
 # Oslo2012
 parametric_basis := proc( AA::list, BB::list, n::integer, aa:= `a` )
-local s,sd,c,rows,t1,t2,tt1,tt2,p,k, res,
+local NZ,s,sd,c,rows,t1,t2,tt1,tt2,p,k, res,
     var, SS, t, Ev, Dl,un, i,j, lv, m, r, H, u , Dl0, v, free, R, CC, CCs;
     CCs:= NULL;
 
@@ -1110,7 +1132,7 @@ end:
 
 
 closedness_equations := proc( SS::list, un::list, var::list, BB:= [] )
-local p, n, t1, t2, tt1, tt2, c, res;
+local sd, j, k, u,p, n, t1, t2, tt1, tt2, c, res;
 
     n:= nops(var);
     sd:= nops(SS);
@@ -1156,7 +1178,7 @@ end:
 # ITER:  max iterations
 #
 newton_mod := proc( f::list, var::list,z::list, tol:= 0.001, eps:= 0.01, ITER:=100)
-    local Dx, ZZ, c, DD, ind, S;
+    local i,Dx, ZZ, c, DD, ind, S;
     c:=0;
     Dx:= 2*tol;
     ZZ:=z;
@@ -1232,7 +1254,7 @@ end:
 # Newton next update
 #
 newton_next := proc( f::list, var::list,z::list, tol:= 0.001)
-local Ji, fx;
+local i,Ji, fx;
 
     Ji:= m_inverse( # (pseudo-)inverse of Jacobian
         subs( seq(var[i]=z[i],i=1..nops(var)),
@@ -1263,7 +1285,7 @@ end:
 #Compute perturbed point
 #
 pert_point:= proc( z::list , e:= 0.005, d::posint:= 2 )
-local pp;
+local i,pp;
 if e=0.0 then return z; fi;
 pp:= RandomTools[Generate]( list( float(range=e..3*e, digits=d), nops(z) ) );
 pp:= pp - [seq(2*e,i=1..nops(z)) ] ;
@@ -1275,7 +1297,7 @@ end:
 # Perturb polynomial wrt the elements of A
 #
 pert_poly := proc (p, z::list, var::list, A::list, k )
-local n,i, g;
+local j,n,i, g;
     #print("pert_poly input", p, z );
     n:=nops(var);
     g:=p;
@@ -1348,7 +1370,7 @@ end:
 #
 # Return the indices of n independent rows of an mxn Matrix
 #
-rmaximal_minor:= proc( M::Matrix, tol:=0.05)
+rmaximal_minor:= proc( M::Matrix, tol:=0)
 #print("rmax", M);
 cmaximal_minor(Transpose(M), tol );
 end:
@@ -1362,8 +1384,9 @@ local RR, i,j,n,m, cc;
 
     n, m:= Dimension(M);
 
-    RR:= QRDecomposition( M , output = ['R'], fullspan=false);
-    RR:= ReducedRowEchelonForm(RR) ;
+    RR:= QRDecomposition( M , output = ['R'], fullspan=true);
+    print("max_minor: R=", RR, "rank=", Rank(RR), ncorank(RR));
+    #RR:= ReducedRowEchelonForm(RR) ;
     #print("max_minor: R=", RR, "rank=", Rank(RR), ncorank(RR));
     #print("QR - rank: ", QRDecomposition(M, output = ['R','rank']));
     #print("redrow: ", ReducedRowEchelonForm(RR));
@@ -1373,7 +1396,8 @@ local RR, i,j,n,m, cc;
     i:=1;
     j:=1;
     while i<=n and j<=m do
-        #print("(",i,j,"): ", abs(RR[i,j]), ">", tol );
+        #print("(",i,j,"): ");
+        #print(abs(RR[i,j]), ">", tol );
         if(abs(evalf(RR[i,j]))) > tol then #Caution for errors here!
             cc:= cc, j;
             i:=i+1;
@@ -1473,7 +1497,7 @@ end:
 
 #Interval box for use in rump's test
 i_box:= proc( bx::list, nvars::integer, tol:=0.01 )
-local i,zs,n, X,cc ;
+local j,i,zs,n, X,cc ;
     n:= nops(bx);
 
     zs:= [ seq( (bx[i][1]+bx[i][2])/2, i=1..nops(bx) ),
@@ -1492,6 +1516,7 @@ end:
 
 # Make a box around z with certain tolerance
 mbox:= proc (z::list, tol:=0.02)
+local j;
 [seq( [z[j]-tol,z[j]+tol], j=1..nops(z))];
 end:
 
@@ -1901,6 +1926,7 @@ end:
 # Create variable list [ x[1],...,x[n] ]
 #
 get_var := proc (n)
+local i;
 [seq(x[i],i=1..n)];
 end:
 
@@ -1908,7 +1934,7 @@ end:
 # Benchmark Systems
 #
 bench_systems := proc()
-local dd, z0,z1,z2, G,v,p ;
+local i,k,dd, z0,z1,z2, G,v,p ;
 
 #############################
 # Systems
@@ -2181,7 +2207,7 @@ end:
 # (not used)
 #
 macaulay_block := proc(f::list, var::list, z::list, dp::integer:=1 )
-    local n, r, c, M, ci, mr, ri, i, t;
+    local s,n, r, c, M, ci, mr, ri, i, t;
 
     n:= nops(var);
     if dp<0 then return [0]; fi;
@@ -2467,7 +2493,7 @@ end:
 # Check of the leading term of df appears as a term in LT.
 # (not used)
 has_term:= proc( df, LT::list)
-    local d, i, m;
+    local s,d, i, m;
     #print("has_term_Input:", df, LT );
     d:= Dimension(df);
 
@@ -2608,6 +2634,7 @@ nkernel := proc(M::Matrix, tol:=0)
 
     if nops([K])=0 then return {}; fi;
     #print("nkernel_Output:",nops([K]) );
+    #print("nkernel_Output:", K );
 [K];
 end:
 
@@ -2633,7 +2660,7 @@ end:
 # Step in depth dp of Macaulay's method for the dual basis
 #
 macaulay_step := proc(f::list, var::list, z::list, dp::integer, tol:=0, BB:=[])
-local E, n,NN,R,p,row, r, c, M, mc, j, ci, mr, k, ri, i, t;
+local s,E, n,NN,R,p,row, r, c, M, mc, j, ci, mr, k, ri, i, t;
 
     n:= nops(var);
     if dp<0 then return [0]; fi;
@@ -2720,7 +2747,7 @@ end:
 # and (optionally) partial standard basis BB of the quotient
 #
 mourrain_step := proc( f::list, var::list, z::list,DD::list, tol:=0, BB:=[])
-local sd,un,c,t1,t2,tt1,tt2,p, k, row,R,rows,rr,n, M, NN, DIF, s, ro, i,j;
+local u,sd,un,c,t1,t2,tt1,tt2,p, k, row,R,rows,rr,n, M, NN, DIF, s, ro, i,j;
     n:= nops(var);
     sd:=nops(DD);
     #print(" mourrain_step_Input",DD);
@@ -2862,11 +2889,11 @@ local sd,un,c,t1,t2,tt1,tt2,p, k, row,R,rows,rr,n, M, NN, DIF, s, ro, i,j;
         fi;
 
     fi;
-    #print("Columns:". to_polynomial(NN) );
+    #print("Columns:", to_polynomial(NN) );
     #print("Matrix:", M );
-    print("Int. Dimension:",Dimension(M));
+    #print("Int. Dimension:",Dimension(M));
     R:= nkernel( M, tol );
-    print(`Found`, nops(R). `vectors`);
+    #print(`Found`, nops(R). `vectors`);
     #print(`sol= `, R );
 
 #### Computing new elements
@@ -2959,7 +2986,7 @@ end:
 # Returns triangular basis
 #
 mourrain := proc( f::list, var::list, z::list, tol:=0, upto:=infinity )
-local BB, DD,t,t1, n, c;
+local j,BB, DD,t,t1, n, c;
 
     n:= nops(var);
     c:=1;
@@ -3087,7 +3114,7 @@ end:
 # Computes Normal form of p, given the primal-dual pair (BB,AA)
 #
 normal_form := proc ( p, var::list, z::list, BB::list, AA::list)
-    local Sb, nf, i, m, dfs;
+    local k,Sb, nf, i, m, dfs;
     m:=nops(BB);
     nf:=0;
     Sb:= seq(var[k]=z[k], k=1..nops(z));
@@ -3123,7 +3150,7 @@ end:
 # Computes the matrix of multiplication by a polynomial S in R/Q_z
 #
 mult_mat := proc (f::list, var::list, z::list, S)
-local BB,AA, m, MM,j,i ;
+local NF, BB,AA, m, MM,j,i ;
 
     BB, AA := basis_pair(f,var,z);
     m:= nops(BB);
@@ -3162,7 +3189,7 @@ end:
 # Return the number of half-branches of real curve f=0 at point z
 #
 curve_branches := proc ( f::list, var::list, z::list )
-    local n, Sb,m,i,MM,j,JJ, ff, BB, AA, ev, Phi;
+    local k, n, Sb,m,i,MM,j,JJ, ff, BB, AA, ev, Phi;
     n:= nops(var);
     Sb:= [seq(var[k]=z[k],k=1..n)];
     ff:= [ op(f),
@@ -3215,7 +3242,7 @@ end:
 # Compute topological degree of mapping ff at point z
 #
 topological_degree := proc ( ff::list, var::list, z::list, tol:=0)
-    local n, Sb,m,i,MM,j,JJ, BB, AA, ev, Phi;
+    local k,n, Sb,m,i,MM,j,JJ, BB, AA, ev, Phi;
     n:= nops(var);
     Sb:= [seq(var[k]=z[k],k=1..n)];
 
@@ -3257,7 +3284,7 @@ end:
 # Create coefficient matrix of differentials BB
 #
 coefmatrix := proc (BB,v:=[] )
-    local SBB,i,j,A,c,n,var;
+    local s,SBB,i,j,A,c,n,var;
 
     n:=Dimension(BB[1])[1]-1;
     if v=[] then
@@ -3329,7 +3356,7 @@ end:
 # Compute a primal-dual orthogonal pair
 #
 basis_pair:= proc( f::list, var::list, z::list, tol:=0, upto:=infinity )
-    local Db,A,i,C,ind;
+    local j,Db,A,i,C,ind;
 
     #for a suitable ordering (reverse to degree) we get already a good
     # basis
@@ -3353,14 +3380,14 @@ basis_pair:= proc( f::list, var::list, z::list, tol:=0, upto:=infinity )
     A:=C[2][ind];
     C[2]:=[op(A),op(subsop(seq( ind[j]=NULL,j=1..nops(ind)),C[2]))];
 
-matrix2diffs( C[1], C[2],var, tol), A;
+matrix2diffs( C[1], C[2], var, tol), A;
 end:
 
 #
 # Given dual basis BB, find AA.  (under constuction)
 #
 make_basis_pair:= proc( BB::list, var::list)
-    local Db,A,B,i,C,ind;
+    local j,Db,A,B,i,C,ind;
 
     C:= coefmatrix( BB, var );
 
@@ -3395,7 +3422,7 @@ end:
 # Computes the `Cyclic-n` polynmial system in variables x[1]..x[n]
 #
 cyclicn := proc( n )
-local m,i,j, t, CN;
+local k,m,i,j, t, CN;
 
 CN:=NULL;
 m:=n-1;
@@ -3427,7 +3454,7 @@ end:
 
 #Benchmark system by Kobayashi et al.
 kssn := proc( n )
-local s;
+local i,j,s;
 lprint("Solution is", [seq(1,i=1..n)]);
 s:=add(x[j],j=1..n) - n + 1;
 [seq( x[i]^2 - 2*x[i]+ s, i=1..n)];
@@ -3473,6 +3500,7 @@ end:
 # RevLex-first degree r monomial in n variables
 #
 first_mon:= proc(r::integer,n::integer)
+    local k;
     return [r,seq(0,k=1..n-1)];
 end:
 
@@ -3524,7 +3552,7 @@ mmint := proc( f,
   {toggle::list(posint):=[]},
   {header::truefalse:=false},
   {extras::string:=""} )
-local fname,k,oldiface,executable;
+local x,fname,k,oldiface,executable;
    fname := cat(kernelopts('homedir'),kernelopts('dirsep'),"minttemp.txt");
    #fname := "/tmp/minttemp.txt"; # or some other temp location
    oldiface := interface('verboseproc');
