@@ -1223,22 +1223,40 @@ end:
 #
 # Newton's Method
 #
-newton := proc( f::list, var::list,z::list, tol:= 0.0001, ITER:=500)
-    local Dx , ZZ, c;
+newton := proc( f::list, var::list,z::list, tol:= 0.0001, ITER:=500, minITER:=1)
+local allDx := NULL, Dx , ZZ, c, mDx, allRes := NULL;
+    #print("Digits:", Digits, UseHardwareFloats);
     c:=0;
     Dx:= 2*tol;
     ZZ:=z;
-    while evalf(max(map(abs,Dx)))>tol do
-        Dx := newton_next(f,var,ZZ,tol);
-        #print(Dx);
-        ZZ := ZZ - Dx;
-        print("Next:", ZZ, evalf(max(map(abs,Dx))) );
+    while ( mDx>tol or c<minITER ) do # L1 norm
         c:=c+1;
         if c>ITER then
             lprint(ITER,`newton: iterations reached.`);
             break;
         fi;
+
+        #Dx := newton_next(f,var,ZZ,tol);
+        Ji:= m_inverse(subs( seq(var[i]=ZZ[i],i=1..nops(var)),
+                  VectorCalculus:-Jacobian(f,var)), tol);
+        fx:= Matrix( < eval(f, [seq(var[i]=ZZ[i],i=1..nops(z))])>);
+        Dx := convert( Ji . fx , list);
+        mDx := evalf(max(map(abs,Dx))):
+        allDx := allDx, mDx;
+        allRes := allRes, MatrixNorm(fx,infinity);
+        #print(Dx);
+        ZZ := ZZ - Dx;
+        print(Dx);
+        print("Next:", ZZ, "Residual: ", mDx );
     od;
+    allDx := [allDx];
+    allRes := [allRes];
+    #print(`Residuals:`, allDx);
+    print(`Residuals:`, allRes);
+    print(`Rate:`, map(ln,allDx[2..c]) /~ map(ln,allDx[1..c-1]) );
+    print(`Residual Rate:`, map(ln,allRes[2..c]) /~ map(ln,allRes[1..c-1]) );
+
+
 lprint(`newton: iterations:`,c);
 ZZ;
 end:
@@ -1253,14 +1271,17 @@ end:
 #
 # Newton next update
 #
-newton_next := proc( f::list, var::list,z::list, tol:= 0.001)
+newton_next := proc( f::list, var::list,_z::list, tol:= 0.001)
 local i,Ji, fx;
-
     Ji:= m_inverse( # (pseudo-)inverse of Jacobian
-        subs( seq(var[i]=z[i],i=1..nops(var)),
-              VectorCalculus:-Jacobian(f,var)
-            ));
-    fx:= Matrix( < subs(seq(var[i]=z[i],i=1..nops(z)), f )>) ;
+        subs( seq(var[i]=_z[i],i=1..nops(var)),
+              VectorCalculus:-Jacobian(f,var)), tol);
+    fx:= Matrix( < eval(f, [seq(var[i]=_z[i],i=1..nops(_z))])>);
+    #fx:= Matrix( < subs(seq(var[i]=_z[i],i=1..nops(_z)), convert(f, 'horner', var)) >) ;
+
+    # Note: check digits and UseHardwareFloats options for correct computations
+    #print(Ji);
+    #print(_z, convert(fx,list));
 
 convert( Ji . fx , list);
 end:
@@ -1385,7 +1406,7 @@ local RR, i,j,n,m, cc;
     n, m:= Dimension(M);
 
     RR:= QRDecomposition( M , output = ['R'], fullspan=true);
-    print("max_minor: R=", RR, "rank=", Rank(RR), ncorank(RR));
+    #print("max_minor: R=", RR, "rank=", Rank(RR), ncorank(RR));
     #RR:= ReducedRowEchelonForm(RR) ;
     #print("max_minor: R=", RR, "rank=", Rank(RR), ncorank(RR));
     #print("QR - rank: ", QRDecomposition(M, output = ['R','rank']));
@@ -2596,8 +2617,15 @@ end:
 m_inverse := proc(M::Matrix, tol:=1e-3)
     local m,n,U,Sv,Vt ;
 
-    U,Sv,Vt:= SingularValues(evalf(M), output = [':-U',':-S',':-Vt'] );
     m,n := Dimension(M);
+
+    # does both inverse or pseudo-inverse
+    return LinearAlgebra:-MatrixInverse(M); #, method = 'LU', 'pseudo');
+
+    #methodoptions=[tolerance=tol]
+
+    U,Sv,Vt:= SingularValues(evalf(M), output = [':-U',':-S',':-Vt'] );
+
 Transpose(Vt) .MatrixInverse(Matrix(Sv, shape=diagonal)[1..m,1..n]) . Transpose(U) ;
 end:
 
@@ -3001,7 +3029,7 @@ local j,BB, DD,t,t1, n, c;
         if 0=nops(t) then
             break;
         else
-            print("deg=",c,"#D=",nops(t) );
+            #print("deg=",c,"#D=",nops(t) );
             c:=c+1;
 
             t:= coefmatrix(t,var);
@@ -3540,8 +3568,8 @@ lprint(`Multiple Roots package`);
 end:
 
 # Settings
-UseHardwareFloats := true: #Using hardware floats
-Digits:= 32:
+#UseHardwareFloats := true: #Using hardware floats
+#Digits:= 32:
 
 
 ##
