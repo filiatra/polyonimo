@@ -66,7 +66,7 @@ rlex_min,total_deg, leading_df, trailing_df,
 normal_form, mult_table, mult_mat,
 # Dual Basis computation
 macaulay_block, cand_set,
-macaulay_step, mourrain_step,
+macaulay_step, mourrain_step, mourrain_parametric,
 # Auxiliary
 check_list, get_var, rump,
 sign_of, app_funct,
@@ -350,9 +350,11 @@ end:
 #
 # symbolic_dual
 #
-symbolic_dual := proc(dp::integer,n::integer,  vars::list:=[], BB:=[] )
+symbolic_dual := proc(n::integer, BB)
     local s,sd,c,rows,t1,t2,tt1,tt2,p,k, res, EX, _ex,
-    var, SS, t, Ev, DD,un, i,j, lv ;
+    Bor:=NULL, H, var, SS, SSq, t, Ev, DD,un, i,j, lv, q, _b := 1;
+
+    H := hilbert_func( BB );
 
     var:= get_var(n);
     EX := exp_of(BB,convert(indets(BB),list));
@@ -363,15 +365,18 @@ symbolic_dual := proc(dp::integer,n::integer,  vars::list:=[], BB:=[] )
 
     lv :=[a,b,g,h,l,o,q,r,t,u,v,w]:
 
-    for j to dp do
+    SS := Ev;
+    p:=0;
+    ce := 0:
+    for j from 2 to nops(H) do
 
         #print(j);
         unassign(lv[j]);
 
         # Get candidate set
-        DD:= cand_set( [Ev, SS] ) ;
+        DD:= cand_set( [SS] ) ;
 
-	#Remove elements of BB
+        #Remove elements of BB
         for _ex to nops(EX) do
             for i to nops(DD) do
         	DD[i]:= set_coeff(DD[i], EX[_ex], 0);
@@ -379,59 +384,57 @@ symbolic_dual := proc(dp::integer,n::integer,  vars::list:=[], BB:=[] )
 
         #print("DD",DD);
 
-        # Add properly variables
-        un:=[ seq(lv[j][k], k=1..nops(DD) )];
+        sd:= nops([SS]);
+        SSq := NULL;
+        for q to H[j] do
+            # Add properly variables
+            #print("Element",j,q, "lower basis:", sd);
 
-        t:= Matrix(n+1,1):
-        for i to nops(DD) do
-            DD[i]:= add_var(DD[i], un[i]);
-            t:= sadd_df(t, DD[i]);
-        od;
-        #print("DDvar",DD);
-        SS:= SS, t;
-    od;
+            un:=[ seq(lv[j][q,k], k=1..nops(DD) )];
 
-    SS:= [Ev, SS] ;
+            t:= Matrix(n+1,1):
+            for i to nops(DD) do
+                DD[i]:= add_var(DD[i], un[i]);
+                t:= sadd_df(t, DD[i]);
+            od;
+            #print("DDvar",DD);
+            SSq := SSq, t;
 
-   #### Compute Conditions (i)
-    s := nops(DD);
-    sd:= nops(SS)-1;
-
-    c:=first_comb(n,2);
-    rows:=NULL;
-    while c <> NULL do
-        t1:=[ seq(diff_df(SS[j], c[2]),j=1..sd)];
-        t2:=[ seq(diff_df(SS[j], c[1]),j=1..sd)];
-        tt1:= to_polynomial(t1,var);
-        tt2:= to_polynomial(t2,var);
-        p:=0;
-
-        for k to sd do
-            p:= p + un[ (k-1)*n + c[1] ] * tt1[k]
-                  - un[ (k-1)*n + c[2] ] * tt2[k];
-        od;
-        #print(lstcoefof(p,var) ) ;
-
-        c:=next_comb(c,n);
-    od;#all combinations
-
-
-##### Condition (iii), MM2011
-    if BB <> [] then
-        c:=NULL;
-        for k from 2 to nops(SS) do
-            t1 := to_polynomial(SS[k],var);
-            for i from 2 to nops(BB) do
+            #### Compute Conditions (i)
+            c:=first_comb(n,2);
+            rows:=NULL;
+            while c <> NULL do
+                t1:=[ seq(diff_df([SS][j], c[2]),j=1..sd)];
+                t2:=[ seq(diff_df([SS][j], c[1]),j=1..sd)];
+                tt1:= to_polynomial(t1,var);
+                tt2:= to_polynomial(t2,var);
+                #print("OK", tt1, tt2, un );
+                for k to sd do
+                    p:= p + un[ (k-1)*n + c[1] ] * tt1[k]
+                          - un[ (k-1)*n + c[2] ] * tt2[k];
+                od:
+                c:=next_comb(c,n);
+            od;#all combinations
+            #print("Cond:", [lstcoefof(p,var)]);
+            
+            ##### Condition (iii), MM2011
+            t1 := to_polynomial(t,var);
+            for i from 2 to _b do
                 tt1:= coeffof(BB[i],t1,var);
                 if 0<>tt1 then
-                    c := c, tt1 = delta(k,i);
+                    Bor := Bor, tt1 = 0; #delta(_b+q,i);
                 fi:
-            od:
-        od;
-    fi:
+            od;
+            Bor := Bor , coeffof(BB[_b+q],t1,var) = 1;
+        od:#q
+        _b := _b + q - 1;
+
+        SS := SS, SSq;
+#        print("Curr", SS);
+    od: #nops(HH)
 
     #print("symbolic_dual_OUT:", SS);
-SS, [c], [lstcoefof(p,var)];
+[SS], [Bor], [lstcoefof(p,var)];
 end:
 
 #
@@ -2484,7 +2487,7 @@ end:
 diff_df := proc( df::Matrix, i::integer)
 local n,t, m, ci, j, k;
 
-#    print("diff_df_input:",df, to_polynomial(df), i);
+    #print("diff_df_input:",df, to_polynomial(df), i);
     t:= copy(df);
     n:= Dimension(t)[1]-1;
     if i>n then
@@ -2794,7 +2797,6 @@ local u,sd,un,c,t1,t2,tt1,tt2,p, k, row,R,rows,rr,n, M, NN, DIF, s, ro, i,j;
     un:=[cat(a,1..s)];
     #cnt:=0;
 
-
     c:=first_comb(n,2);
     while c <> NULL do
         #cnt:=cnt+1;
@@ -2833,7 +2835,6 @@ local u,sd,un,c,t1,t2,tt1,tt2,p, k, row,R,rows,rr,n, M, NN, DIF, s, ro, i,j;
         #print("Closedness on ", DD, un, var ) ;
         #print("Closedness eqs:", closedness_equations(DD, un, var ) ) ;
         #print("Closedness:", lstcoefof(p,var) );
-
 
         rows:= Array([lstcoefof(p,var)]);
         #print(rows);
@@ -2945,7 +2946,14 @@ local u,sd,un,c,t1,t2,tt1,tt2,p, k, row,R,rows,rr,n, M, NN, DIF, s, ro, i,j;
         p:= p, remove_zero(M, tol);
         #p:= p, M;
     od;
-    [p];
+
+    #print("Unk:", un, R);
+    #Return parameters if requested
+    if _nresults = 1 or _nresults = undefined then
+         [p];
+    else
+        [p], R;
+    end if
 end:
 
 #
@@ -3026,6 +3034,54 @@ local j,BB, DD,t,t1, n, c;
         t:= mourrain_step(f,var,z,DD, tol, BB);
         #print(mu,nops(t));
         #print("step=",t);
+        if 0=nops(t) then
+            break;
+        else
+            #print("deg=",c,"#D=",nops(t) );
+            c:=c+1;
+
+            t:= coefmatrix(t,var);
+            #print("coef_matrix:", t);
+            t1:= cmaximal_minor( t[1], tol );#indices
+
+            #print("max_minor=", t1 );
+            #print("Update partial quotient basis");
+            ## Update Partial quotient Basis
+            BB:= [ op(BB), op(t[2][t1]) ];
+            #print("basis:", BB);
+
+            #print("Orthogonalize current elements");
+            # Orthogonalize current elements
+           t[2]:= [op(t[2][t1]),op(subsop(seq( t1[j]=NULL,j=1..nops(t1)),t[2]))];
+           t[1]:= ReducedRowEchelonForm(
+              Matrix([ t[1][..,t1],  DeleteColumn(t[1],t1)]));
+            #print("Update dual basis");
+            ## Update dual basis
+            DD:= [ op(DD), op( matrix2diffs( t[1], t[2],var, tol) ) ];
+        fi;
+    od;
+DD, BB;
+end:
+
+
+
+#
+# Primal-Dual structure by Mourrain's 97 algorithm, with MM11 improvement
+# Returns primal-dual basis and approximate dual parameter values
+#
+mourrain_parametric := proc( f::list, var::list, z::list, tol:=0, upto:=infinity )
+local j,BB, DD,t,t1, n, c, vv;
+
+    n:= nops(var);
+    c:=1;
+    DD:=Matrix(n+1,1);
+    DD[n+1,1]:=1;
+    DD:= [ DD ];
+    BB:= [1];
+    while true and c<upto+1 do
+        t, vv:= mourrain_step(f,var,z,DD, tol, BB);
+        #print(mu,nops(t));
+        #print("step=",t, vv);
         if 0=nops(t) then
             break;
         else
