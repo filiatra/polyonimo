@@ -1952,6 +1952,10 @@ local i;
 [seq(x[i],i=1..n)];
 end:
 
+sturm02 := proc(n)
+  [x^n-y*z,y^n-x*z,z^n-x*y]
+end;
+
 #
 # Benchmark Systems
 #
@@ -1961,9 +1965,9 @@ local i,k,dd, z0,z1,z2, G,v,p ;
 #############################
 # Systems
 #############################
-G:=[seq(0,k=1..12) ];
-p:=[seq(0,k=1..12) ];
-v:=[seq(0,k=1..12) ];
+G:=[seq(0,k=1..14) ];
+p:=[seq(0,k=1..14) ];
+v:=[seq(0,k=1..14) ];
 
 #1. cbms1:
 G[1]:=[
@@ -2090,8 +2094,18 @@ v[11]:= get_var(nops(%[1]));
 #12. DZ3:
 G[12]:= [
 14*x[1] + 33*x[2] - 3*sqrt(5)* (x[1]^2 + 4*x[1]*x[2] + 4*x[2]^2 + 2) + sqrt(7) + x[1]^3 + 6*x[1]^2*x[2] + 12*x[1]*x[2]^2 + 8*x[2]^3,
-41*x[1] - 18*x[2] - sqrt(5) + 8*x[1]^3 - 12*x[1]^2*x[2] + 6*x[1]*x[2]^2 - x[2]^3 + 3*sqrt(7)*(4*x[1]*x[2] - 4*x[1]^2 - x[2]^2 - 2)
-];
+41*x[1] - 18*x[2] - sqrt(5) + 8*x[1]^3 - 12*x[1]^2*x[2] + 6*x[1]*x[2]^2 - x[2]^3 + 3*sqrt(7)*(4*x[1]*x[2] - 4*x[1]^2 - x[2]^2 - 2) ];
+
+#13. Sturmfels
+G[13]:= [ x^3-3*x^2*y+3*x*y^2-y^3-z^2, z^3-3*z^2*x+3*z*x^2-x^3-y^2, y^3-3*y^2*z+3*y*z^2-z^3-x^2];
+p[13]:= [ [0, 0, 0] , 0];
+v[13]:= [x,y,z];
+
+#14. Sturmfels, B., 2002. Solving systems of polynomial equations. Number 97 in CBMS Regional Conference Series in Mathematics. American Mathematical Soc.
+G[14]:= sturm02(3);
+p[14]:= [ [0, 0, 0] , 0];
+v[14]:= [x,y,z];
+
 # with coeffcients rounded to 5 digits, at approximate zero
 dd:=Digits;
 Digits:=5;
