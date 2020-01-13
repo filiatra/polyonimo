@@ -245,13 +245,13 @@ end:
 #
 # Replaces coefficient of a dual element with variables ai
 #
-add_var := proc ( df::Matrix, aa:= `a` )
+add_var := proc ( df::Matrix, _aa:= `a` )
     local n,m,un,j,sd ;
 
     n,m:= Dimension(df);
     sd:= copy(df);
     for j to m do
-        sd[n,j]:= sd[n,j]*aa;
+        sd[n,j]:= sd[n,j]*_aa;
         od;
 sd;
 end:
@@ -351,13 +351,13 @@ end:
 # symbolic_dual
 #
 symbolic_dual := proc(n::integer, BB)
-    local s,sd,c,rows,t1,t2,tt1,tt2,p,k, res, EX, _ex,
+    local s,sd,c,rows,t1,t2,tt1,tt2,p,k, res, DDq, #EX, _ex,
     Bor:=NULL, H, var, SS, SSq, t, Ev, DD,un, i,j, lv, q, _b := 1;
 
     H := hilbert_func( BB );
 
     var:= get_var(n);
-    EX := exp_of(BB,convert(indets(BB),list));
+    #EX := exp_of(BB,convert(indets(BB),list));
 
     Ev:= Matrix(n+1,1): Ev[n+1,1]:=1:
     DD:=[];
@@ -370,18 +370,15 @@ symbolic_dual := proc(n::integer, BB)
     ce := 0:
     for j from 2 to nops(H) do
 
-        #print(j);
-        unassign(lv[j]);
-
         # Get candidate set
         DD:= cand_set( [SS] ) ;
 
-        #Remove elements of BB
-        for _ex to nops(EX) do
-            for i to nops(DD) do
-        	DD[i]:= set_coeff(DD[i], EX[_ex], 0);
-        od:od:
-
+        #Remove elements of BB ..
+#        for _ex to nops(EX) do
+#            for i to nops(DD) do
+#        	DD[i]:= set_coeff(DD[i], EX[_ex], 0);
+#        od:od:
+        
         #print("DD",DD);
 
         sd:= nops([SS]);
@@ -390,14 +387,14 @@ symbolic_dual := proc(n::integer, BB)
             # Add properly variables
             #print("Element",j,q, "lower basis:", sd);
 
-            un:=[ seq(lv[j][q,k], k=1..nops(DD) )];
+            unassign(lv[j-1]);
+            un:=[ seq(lv[j-1][q,k], k=1..nops(DD) )];
 
             t:= Matrix(n+1,1):
             for i to nops(DD) do
-                DD[i]:= add_var(DD[i], un[i]);
-                t:= sadd_df(t, DD[i]);
+                DDq:= add_var(DD[i], un[i]);
+                t:= sadd_df(t, DDq);
             od;
-            #print("DDvar",DD);
             SSq := SSq, t;
 
             #### Compute Conditions (i)
@@ -425,6 +422,7 @@ symbolic_dual := proc(n::integer, BB)
                     Bor := Bor, tt1 = 0; #delta(_b+q,i);
                 fi:
             od;
+            #print(BB[_b+q], t1, coeffof(BB[_b+q],t1,var));
             Bor := Bor , coeffof(BB[_b+q],t1,var) = 1;
         od:#q
         _b := _b + q - 1;
@@ -434,7 +432,7 @@ symbolic_dual := proc(n::integer, BB)
     od: #nops(HH)
 
     #print("symbolic_dual_OUT:", SS);
-[SS], [Bor], [lstcoefof(p,var)];
+[SS], [Bor], [lstcoefof(expand(p),var)];
 end:
 
 #
