@@ -351,7 +351,7 @@ end:
 # symbolic_dual
 #
 symbolic_dual := proc(n::integer, BB)
-    local s,sd,c,rows,t1,t2,tt1,tt2,p,k, res, DDq, #EX, _ex,
+    local s,sd,c,rows,t1,t2,tt1,tt2,p,k, res, DDq, ccond:=NULL, #EX, _ex,
     Bor:=NULL, H, var, SS, SSq, t, Ev, DD,un, i,j, lv, q, _b := 1;
 
     H := hilbert_func( BB );
@@ -405,25 +405,27 @@ symbolic_dual := proc(n::integer, BB)
                 t2:=[ seq(diff_df([SS][j], c[1]),j=1..sd)];
                 tt1:= to_polynomial(t1,var);
                 tt2:= to_polynomial(t2,var);
-                #print("OK", tt1, tt2, un );
+                p := 0;
                 for k to sd do
                     p:= p + un[ (k-1)*n + c[1] ] * tt1[k]
                           - un[ (k-1)*n + c[2] ] * tt2[k];
                 od:
+                ccond := ccond, lstcoefof(expand(p),var);
                 c:=next_comb(c,n);
             od;#all combinations
             #print("Cond:", [lstcoefof(p,var)]);
             
             ##### Condition (iii), MM2011
             t1 := to_polynomial(t,var);
-            for i from 2 to _b do
+            for i from 2 to _b+H[j] do
                 tt1:= coeffof(BB[i],t1,var);
                 if 0<>tt1 then
-                    Bor := Bor, tt1 = 0; #delta(_b+q,i);
+                    Bor := Bor, tt1 = delta(_b+q,i);
                 fi:
             od;
-            #print(BB[_b+q], t1, coeffof(BB[_b+q],t1,var));
-            Bor := Bor , coeffof(BB[_b+q],t1,var) = 1;
+            #for i to H[j] do
+            #    Bor := Bor , coeffof(BB[_b+q],t1,var) = delta(_b+q,i);
+            #od:
         od:#q
         _b := _b + q - 1;
 
@@ -432,7 +434,7 @@ symbolic_dual := proc(n::integer, BB)
     od: #nops(HH)
 
     #print("symbolic_dual_OUT:", SS);
-[SS], [Bor], [lstcoefof(expand(p),var)];
+[SS], [Bor], [ccond]; #[lstcoefof(expand(p),var)];
 end:
 
 #
