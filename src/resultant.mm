@@ -39,7 +39,9 @@ export
     printComplex,
     wcDimension,
     makeMatrix,
+    makeAllMatrices,
     matrixIndex,
+    makeMacaulayMap,
 # Utility
     mDegree,
     allvars,
@@ -658,6 +660,13 @@ end:
         fi:
 
         if plevel=4 then
+            #sum:= 0, " ---> ";
+            #for v in ListTools:-Reverse(convert(rtable_elems(KK:-K),list)) do
+            #    d1, d2 := blockStructure(KK,lhs(v),lhs(v)-1);
+            #    sum:= sum, Matrix(nops(d1), nops(d2), (i,j)-> [d1[i],d2[j]]), "--->";
+            #od;
+            #print( sum, 0 );
+            #return;
             d1, d2 := blockStructure(KK,1,0);
             print( Matrix(nops(d1), nops(d2), (i,j)-> [d1[i],d2[j]]) );
             return;
@@ -689,7 +698,7 @@ end:
 			sum := sum, wcDimension(rhs(v));
 	        od;
 		print(sum);
-		return;
+		return sum;
 	fi:
 
         ERROR(`Print level can only be 0..6`);
@@ -745,6 +754,18 @@ end:
         fi:
     end:
 
+makeAllMatrices:= proc(KK::WCOMPLEX, sysp:=[], varp:=['x','y','z','u','v','w','s','t'][1..KK:-ng])
+local i, n := convert(KK:-grp,`+`), MM;
+    MM:= NULL:
+    for i from n to 1 by -1 do
+        if KK:-K[i]<>0 then
+            #mi:= matrixIndex(KK,[x], i, i-1);
+            MM := MM, makeMatrix(KK,ff,varp, i,i-1);
+        fi:
+    od:
+MM;
+end:
+
 ### The Matrix K_v1 -> K_v0
     makeMatrix:= proc(KK::WCOMPLEX, sysp:=[], varp:=['x','y','z','u','v','w','s','t'][1..KK:-ng], v1::integer := 1, v0::integer := 0)
     local ddeg, sys, var, matr, row, col, rows, cols, n:= KK:-nv; #, d1, d2;
@@ -769,7 +790,7 @@ end:
             od:
         fi;
         #for now demand det/al complex
-        if not ArrayNumElems(KK:-K,'NonZero')=2 then ERROR("Not Determinantal") fi;
+#        if not ArrayNumElems(KK:-K,'NonZero')=2 then ERROR("Not Determinantal") fi;
         if v1-v0 <> 1 then ERROR("Terms not consecutive") fi;
 
         #compute block dimensions
@@ -840,21 +861,24 @@ end:
         grps := KK:-ng;
 
         rows:=NULL;
+        if (0<>KK:-K[v1]) then 
         for row in rtable_elems(KK:-K[v1]) do
            for r in rhs(row) do
                _u:= toDegreeVector(r:-mdeg, KK:-grp);
                rows:= rows, [monbasis(KK:-grp,_u,var)];
             od;
          od:
-
+        fi:
+        
         cols:=NULL;
+        if (0<>KK:-K[v0]) then 
         for row in rtable_elems(KK:-K[v0]) do
              for r in rhs(row) do
             _u:= toDegreeVector(r:-mdeg, KK:-grp);
                 cols:= cols, [monbasis(KK:-grp,_u,var)];
             od;
          od:
-
+        fi:
         [rows],[cols];
     end:
 
@@ -934,6 +958,7 @@ end:
     local p, g, gvar, vars;
         vars:=NULL;
         if not ( nops(var)= Dimension(nis) and nops(var)=Dimension(mdeg)) then
+            print("nis,mdeg,var:", convert(nis,list), convert(mdeg,list),var );
             ERROR(`Wrong dimensions`); fi;
         p:=1;
         for g from 1 to Dimension(nis) do
@@ -1424,5 +1449,81 @@ od:
         od;
         Matrix([rows], storage=sparse);
     end:
+
+#for use in makeMacaulayMap
+Epick := proc (_m,_dis, _n, _d) options operator, arrow;
+local j:=_n+1, i:=0;
+    if _d-degree(_m) >=_dis[1,j] then i := i+1: fi:
+    for j from _n to 1 by -1 do
+      if degree(_m,x[j])>=_dis[1,j] then
+        i := i+1:
+        if i>1 then break; fi:
+      fi:
+    od:
+return j;
+end proc:
+
+makeMacaulayMap := proc(nis::Vector, dis::Matrix, sys:=[], varp:=['x','y','z','u','v','w','s','t'][1..Dimension(nis)])
+local KK, n:= convert(nis,`+`), mac := vec_macaulay(nis,dis),
+    _S:= NULL, _E1 := NULL, _E0;
+
+    KK := makeComplex(nis,dis,mac):
+    mi := matrixIndex(KK,[x], 1, 0);
+    
+    #Get redundant rows
+    mii := mi[1];
+    sii := [seq({},i=1..n+1)]: sii[1]:= {seq(1..nops(mii[1]))}:
+    rii := [seq({},i=1..n+1)]:
+    for i from 2 to n+1 do
+        for j from i to n+1 do
+            rii[j]:= rii[j] union remove( _q -> degree( mii[j][_q],x[i-1])< deg[1,i-1],  {$ 1..nops(mii[j])} );
+        od:
+        rii[i] := sort(rii[i]):
+    od:
+    print("removed", seq( mii[j][convert(rii[j],list)], j=1..n+1) );
+
+    print("Rows:", mii[1][convert(sii[1],list)]);
+    c:= nops(mii[1]): #shift indices
+    for i from 2 to n+1 do
+        sii[i]:= {seq(1..nops(mii[i]))} minus rii[i];
+        print("Rows:", mii[i][convert(sii[i],list)]);
+        #rii[i]:= rii[i] +~ c;
+        sii[i]:= sii[i] +~ c;
+        c:= c + nops(mii[i]):
+    od:
+
+    print("Cols:", mi[2][1]);
+
+    mii := mi[2][1]:
+    erii := [seq({},i=1..n+1)]:
+    ecii := NULL;
+    for i to nops(mii) do
+        c := Epick(mii[i],dis,n,mac[1]);
+        if c<>0 then
+            ecii := ecii, i;
+            erii[c] := erii[c]union
+            select(_q -> mi[1][c][_q]=mii[i]/(x[c]^dis[1,c]), {$1..nops(mi[1][c])});
+            #print("select", seq(mi[1][c][_q]=mii[i]/(x[c]^dis[1,c]), _q=1..nops(mi[1][c])) );
+        fi:
+    od:
+    ecii := {ecii};
+    print("e-col",mi[2][1][convert(ecii,list)]);
+
+    mii := mi[1];
+    c:= nops(mii[1]): #shift indices
+    for i from 2 to n+1 do
+        erii[i]:= erii[i] +~ c;
+        c:= c + nops(mii[i]):
+    od:
+    print("e-row", erii);
+    
+    #print( sii);
+    erii := ListTools:-Flatten(map(convert,erii,list));
+    ecii := convert(ecii,list);
+    MM := makeMatrix(KK,sys,[x], 1,0):
+    MM[ListTools:-Flatten(map(convert,sii,list)),..],
+    erii, ecii;
+end:
+
 
 end:#end resultant
